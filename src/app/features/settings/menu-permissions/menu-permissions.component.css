@@ -1,0 +1,77 @@
+.permission-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.role-select {
+  width: min(100%, 22rem);
+}
+.save-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+.delegation-note,
+.unsaved {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 0.55rem;
+  color: #5f6b63;
+  background: #eef2eb;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+.unsaved {
+  color: #735d26;
+  background: #fff7dc;
+}
+.permission-table {
+  max-height: 65dvh;
+}
+.permission-table thead {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+}
+.check-cell {
+  width: 5.5rem;
+  text-align: center;
+}
+.check-cell input,
+.additional-cell input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: #1e5748;
+}
+.additional-cell {
+  min-width: 12rem;
+}
+.additional-cell label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.2rem 0.7rem 0.2rem 0;
+  color: #45584e;
+  font-size: 0.76rem;
+}
+.group-row th {
+  color: #315347;
+  background: #eaf1df;
+  font-size: 0.72rem;
+}
+code {
+  font-size: 0.75rem;
+}
+@media (max-width: 650px) {
+  .permission-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .role-select {
+    width: 100%;
+  }
+  .save-actions {
+    justify-content: flex-end;
+  }
+}

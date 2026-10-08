@@ -1,0 +1,151 @@
+<div class="toolbar">
+  <div class="search-field">
+    <label for="role-search">Search roles</label>
+    <input
+      id="role-search"
+      type="search"
+      [formControl]="searchControl"
+      placeholder="Search roles"
+    />
+  </div>
+  @if (auth.hasPermission(permissions.settingsRolesCreate)) {
+    <button class="primary-button" type="button" (click)="openCreate()">Add role</button>
+  }
+</div>
+
+@if (successMessage()) {
+  <p class="notice" role="status">{{ successMessage() }}</p>
+}
+@if (errorMessage()) {
+  <p class="alert" role="alert">{{ errorMessage() }}</p>
+}
+
+<section class="panel" aria-label="Workspace roles">
+  @if (loading()) {
+    <div class="state-box" role="status">Loading roles…</div>
+  } @else if (filteredRoles().length === 0) {
+    <div class="state-box">
+      {{ searchTerm() ? 'No roles match your search.' : 'No roles found.' }}
+    </div>
+  } @else {
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Role name</th>
+            <th>Type</th>
+            <th><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (role of filteredRoles(); track role.id) {
+            <tr>
+              <td>
+                <strong>{{ role.name }}</strong
+                ><small class="role-key">{{ role.key }}</small>
+              </td>
+              <td>
+                @if (role.is_system) {
+                  <span class="badge">System role</span>
+                } @else {
+                  <span>Custom</span>
+                }
+              </td>
+              <td class="actions">
+                <button
+                  class="icon-button"
+                  type="button"
+                  [disabled]="
+                    role.is_system || !auth.hasPermission(permissions.settingsRolesUpdate)
+                  "
+                  [attr.title]="role.is_system ? 'System roles cannot be renamed' : 'Edit role'"
+                  (click)="openEdit(role)"
+                >
+                  Edit
+                </button>
+                <button
+                  class="icon-button danger"
+                  type="button"
+                  [disabled]="
+                    role.is_system || !auth.hasPermission(permissions.settingsRolesDelete)
+                  "
+                  [attr.title]="role.is_system ? 'System roles cannot be deleted' : 'Delete role'"
+                  (click)="confirmDelete(role)"
+                >
+                  Delete
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      <span>Page {{ page() }} of {{ pageCount() }} · {{ total() }} roles</span>
+      <button type="button" [disabled]="page() <= 1" (click)="loadRoles(page() - 1)">
+        Previous
+      </button>
+      <button type="button" [disabled]="page() >= pageCount()" (click)="loadRoles(page() + 1)">
+        Next
+      </button>
+    </div>
+  }
+</section>
+
+@if (modalMode()) {
+  <div class="modal-backdrop" (click)="closeModal()">
+    <section
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="role-dialog-title"
+      (click)="$event.stopPropagation()"
+    >
+      <h2 id="role-dialog-title">{{ modalMode() === 'create' ? 'Add role' : 'Edit role' }}</h2>
+      <p>Role names are unique within this workspace.</p>
+      <form [formGroup]="roleForm" (ngSubmit)="saveRole()" novalidate>
+        <div class="form-field">
+          <label for="role-name">Role name</label>
+          <input
+            id="role-name"
+            formControlName="name"
+            maxlength="100"
+            [attr.aria-invalid]="!!roleNameError()"
+            [attr.aria-describedby]="roleNameError() ? 'role-name-error' : null"
+          />
+          @if (roleNameError()) {
+            <p id="role-name-error" class="field-error" role="alert">{{ roleNameError() }}</p>
+          }
+        </div>
+        <div class="form-actions">
+          <button class="secondary-button" type="button" (click)="closeModal()">Cancel</button>
+          <button class="primary-button" type="submit" [disabled]="saving()">
+            {{ saving() ? 'Saving…' : 'Save role' }}
+          </button>
+        </div>
+      </form>
+    </section>
+  </div>
+}
+
+@if (deleteCandidate(); as role) {
+  <div class="modal-backdrop">
+    <section class="modal" role="alertdialog" aria-modal="true" aria-labelledby="delete-role-title">
+      <h2 id="delete-role-title">Delete {{ role.name }}?</h2>
+      <p>This role can only be deleted when it is not assigned to any workspace users.</p>
+      <div class="form-actions">
+        <button
+          class="secondary-button"
+          type="button"
+          [disabled]="saving()"
+          (click)="deleteCandidate.set(null)"
+        >
+          Cancel
+        </button>
+        <button class="danger-button" type="button" [disabled]="saving()" (click)="deleteRole()">
+          {{ saving() ? 'Deleting…' : 'Delete role' }}
+        </button>
+      </div>
+    </section>
+  </div>
+}

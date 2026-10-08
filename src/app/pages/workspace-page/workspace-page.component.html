@@ -1,0 +1,16 @@
+<header class="page-header">
+  <div>
+    <p>{{ auth.selectedWorkspace()?.name }}</p>
+    <h1>{{ title }}</h1>
+    <span>{{ description }}</span>
+  </div>
+  @if (canWrite()) {
+    <button type="button">Create new</button>
+  }
+</header>
+
+<section class="empty-card">
+  <span aria-hidden="true">{{ title.charAt(0) }}</span>
+  <h2>{{ title }} workspace</h2>
+  <p>The {{ title.toLowerCase() }} experience is ready for its feature implementation.</p>
+</section>

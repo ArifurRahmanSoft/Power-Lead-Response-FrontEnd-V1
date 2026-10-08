@@ -1,0 +1,215 @@
+:host {
+  display: block;
+}
+.voice-card {
+  overflow: hidden;
+  border: 1px solid #ccd9c8;
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow:
+    0 2px 5px rgb(30 62 49 / 6%),
+    0 12px 32px rgb(30 62 49 / 10%);
+}
+.voice-header {
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
+  padding: 1.1rem 1.25rem;
+  border-bottom: 1px solid #dfe8dc;
+  background: linear-gradient(115deg, #edf5dc 0%, #f6f9ee 58%, #fff 100%);
+}
+.voice-header > span:last-child {
+  display: grid;
+  gap: 0.14rem;
+}
+.voice-header h2,
+.voice-review-heading h3 {
+  margin: 0;
+  color: #20483a;
+  font-size: 1rem;
+  letter-spacing: -0.015em;
+}
+.voice-header p {
+  margin: 0;
+  color: #65756b;
+  font-size: 0.73rem;
+  line-height: 1.45;
+}
+.voice-kicker {
+  color: #69795e;
+  font-size: 0.62rem;
+  font-weight: 850;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.voice-icon {
+  display: grid;
+  flex: 0 0 2.6rem;
+  width: 2.6rem;
+  height: 2.6rem;
+  border: 1px solid #c9d9a4;
+  border-radius: 0.75rem;
+  color: #285c4b;
+  background: #e3edc8;
+  place-items: center;
+}
+.voice-icon svg {
+  width: 1.25rem;
+  fill: none;
+  stroke: currentcolor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+.voice-body {
+  padding: 1.25rem;
+}
+.voice-ready,
+.voice-review-heading,
+.voice-review-actions,
+.voice-error-actions,
+.voice-status,
+.voice-status-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+.voice-ready,
+.voice-review-heading,
+.voice-review-actions {
+  justify-content: space-between;
+}
+.voice-ready p,
+.voice-review-actions p {
+  margin: 0;
+  color: #66756c;
+  font-size: 0.76rem;
+  line-height: 1.5;
+}
+.voice-primary,
+.voice-secondary,
+.voice-text-button {
+  min-height: 2.55rem;
+  padding: 0.58rem 0.9rem;
+  border-radius: 0.58rem;
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.voice-primary {
+  border: 1px solid #1e5748;
+  color: #fff;
+  background: #1e5748;
+  box-shadow: 0 5px 14px rgb(30 87 72 / 18%);
+}
+.voice-primary:hover {
+  background: #16483b;
+}
+.voice-secondary {
+  border: 1px solid #cad6c8;
+  color: #315246;
+  background: #fff;
+}
+.voice-text-button {
+  border: 0;
+  color: #376252;
+  background: transparent;
+}
+.voice-primary:focus-visible,
+.voice-secondary:focus-visible,
+.voice-text-button:focus-visible,
+.voice-review-form input:focus,
+.voice-review-form select:focus,
+.voice-review-form textarea:focus {
+  outline: 3px solid rgb(57 120 100 / 17%);
+  outline-offset: 2px;
+}
+.voice-status {
+  padding: 0.85rem 0.95rem;
+  border: 1px solid #d9e4d5;
+  border-radius: 0.75rem;
+  background: #f8faf6;
+}
+.voice-status > span:nth-child(2) {
+  display: grid;
+  flex: 1;
+  gap: 0.16rem;
+}
+.voice-status strong {
+  color: #294a3c;
+  font-size: 0.8rem;
+}
+.voice-status small {
+  color: #718078;
+  font-size: 0.7rem;
+}
+.recording-pulse {
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 3px solid #f6d6d2;
+  border-radius: 50%;
+  background: #b4473e;
+  box-shadow: 0 0 0 0 rgb(180 71 62 / 30%);
+  animation: pulse 1.5s infinite;
+}
+.voice-spinner {
+  width: 1.15rem;
+  height: 1.15rem;
+  border: 2px solid #c7d5ca;
+  border-top-color: #28594a;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.voice-message {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid;
+  border-radius: 0.7rem;
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+.voice-message.error {
+  border-color: #edccc8;
+  color: #843832;
+  background: #fff5f3;
+}
+.voice-message.warning {
+  border-color: #e7d8a8;
+  color: #69551f;
+  background: #fffaf0;
+}
+.voice-message ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+.voice-error-actions {
+  flex-wrap: wrap;
+}
+.voice-review-heading {
+  margin-bottom: 1rem;
+}
+.voice-review-heading > span {
+  display: grid;
+  gap: 0.18rem;
+}
+.transcript-panel {
+  margin-bottom: 1rem;
+  padding: 0.9rem 1rem;
+  border-left: 3px solid #85a36f;
+  border-radius: 0 0.65rem 0.65rem 0;
+  background: #f6f9f1;
+}
+.transcript-panel strong {
+  color: #304b3e;
+  font-size: 0.72rem;
+}
+.transcript-panel p {
+  margin: 0.35rem 0 0;
+  color: #53645b;
+  font-size: 0.76rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}

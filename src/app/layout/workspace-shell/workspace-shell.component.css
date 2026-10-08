@@ -1,0 +1,160 @@
+:host {
+  display: block;
+  min-height: 100dvh;
+}
+.app-frame {
+  display: grid;
+  grid-template-columns: 16.5rem minmax(0, 1fr);
+  min-height: 100dvh;
+  background: #f5f7f2;
+}
+.sidebar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  padding: 1.4rem 1rem;
+  border-right: 1px solid #dce3d8;
+  background: #173c33;
+  color: #eef5eb;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.3rem 0.55rem 1.45rem;
+  font-family: Georgia, serif;
+  font-size: 1.25rem;
+  text-decoration: none;
+}
+.brand-mark {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 0.55rem;
+  color: #173c33;
+  background: #dceca8;
+  font-family: inherit;
+}
+.workspace-control {
+  padding: 0 0.45rem 1.2rem;
+}
+.workspace-control label {
+  display: block;
+  margin-bottom: 0.4rem;
+  color: #aac0b6;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.workspace-control select {
+  width: 100%;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid #416359;
+  border-radius: 0.55rem;
+  color: #f4f7f1;
+  background: #214a40;
+}
+.workspace-control select:disabled {
+  opacity: 0.82;
+}
+.workspace-error {
+  margin: 0.45rem 0 0;
+  color: #ffd3ce;
+  font-size: 0.72rem;
+}
+nav {
+  display: grid;
+  gap: 0.25rem;
+}
+nav a {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.68rem 0.72rem;
+  border-radius: 0.55rem;
+  color: #cbd9d3;
+  font-size: 0.86rem;
+  text-decoration: none;
+}
+nav a:hover,
+nav a.active {
+  color: #fff;
+  background: #28574b;
+}
+.nav-icon {
+  display: grid;
+  width: 1.65rem;
+  height: 1.65rem;
+  place-items: center;
+  border-radius: 0.4rem;
+  background: rgb(255 255 255 / 8%);
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+.account-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem 0.65rem;
+  align-items: center;
+  margin-top: auto;
+  padding: 1rem 0.55rem 0;
+  border-top: 1px solid #385d53;
+}
+.avatar {
+  display: grid;
+  grid-row: 1 / 3;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  border-radius: 50%;
+  color: #173c33;
+  background: #dceca8;
+  font-weight: 800;
+}
+.account-copy {
+  display: grid;
+  min-width: 0;
+}
+.account-copy strong {
+  overflow: hidden;
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-copy small {
+  color: #a9beb5;
+  font-size: 0.7rem;
+  text-transform: capitalize;
+}
+.account-card button {
+  grid-column: 1 / -1;
+  margin-top: 0.65rem;
+  padding: 0.55rem;
+  border: 1px solid #416359;
+  border-radius: 0.5rem;
+  color: #dce8e3;
+  background: transparent;
+  cursor: pointer;
+}
+.workspace-content {
+  min-width: 0;
+  padding: clamp(1.25rem, 4vw, 3rem);
+}
+@media (max-width: 760px) {
+  .app-frame {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    position: static;
+    min-height: auto;
+  }
+  nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .account-card {
+    margin-top: 1rem;
+  }
+}

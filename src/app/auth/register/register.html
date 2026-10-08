@@ -1,0 +1,211 @@
+<main class="register-page">
+  <app-register-hero />
+
+  <section
+    class="form-panel"
+    [attr.aria-labelledby]="success() ? 'success-heading' : 'register-heading'"
+  >
+    <div class="form-shell">
+      @if (success()) {
+        <div class="success-state" role="status" aria-live="polite">
+          <span class="success-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="m6.5 12.5 3.4 3.4 7.6-8" /></svg>
+          </span>
+          <p class="eyebrow">Account created</p>
+          <h2 id="success-heading">Registration successful</h2>
+          <p>
+            Your account for <strong>{{ registeredEmail() }}</strong> has been created. No workspace
+            has been set up yet.
+          </p>
+          <a class="primary-link" routerLink="/login">Continue to sign in</a>
+        </div>
+      } @else {
+        <div class="form-heading">
+          <p class="eyebrow">Get started</p>
+          <h2 id="register-heading">Create your account</h2>
+          <p>Use your work email to begin.</p>
+        </div>
+
+        @if (submissionError()) {
+          <div class="form-alert" role="alert">
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M10 6.2v4.3m0 3.1v.2M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" />
+            </svg>
+            <span>{{ submissionError() }}</span>
+          </div>
+        }
+
+        <form #registerForm [formGroup]="form" (ngSubmit)="submit()" novalidate>
+          <div class="field">
+            <label for="name">Name</label>
+            <input
+              id="name"
+              type="text"
+              formControlName="name"
+              autocomplete="name"
+              maxlength="120"
+              placeholder="Jane Doe"
+              [attr.aria-invalid]="hasError('name')"
+              [attr.aria-describedby]="hasError('name') ? 'name-error' : null"
+              (input)="clearBackendError('name')"
+            />
+            @if (hasError('name')) {
+              <p id="name-error" class="field-error" role="alert">{{ fieldError('name') }}</p>
+            }
+          </div>
+
+          <div class="field">
+            <label for="loginId">User ID <span class="optional-label">(optional)</span></label>
+            <input
+              id="loginId"
+              type="text"
+              formControlName="loginId"
+              autocomplete="username"
+              maxlength="50"
+              placeholder="jane.doe"
+              [attr.aria-invalid]="hasError('loginId')"
+              [attr.aria-describedby]="
+                hasError('loginId') ? 'login-id-error login-id-hint' : 'login-id-hint'
+              "
+              (input)="clearBackendError('loginId')"
+            />
+            <p id="login-id-hint" class="field-hint">
+              5–50 letters, numbers, dots, underscores, or hyphens.
+            </p>
+            @if (hasError('loginId')) {
+              <p id="login-id-error" class="field-error" role="alert">
+                {{ fieldError('loginId') }}
+              </p>
+            }
+          </div>
+
+          <div class="field">
+            <label for="email">Email</label>
+            <input
+              id="email"
+              type="email"
+              formControlName="email"
+              autocomplete="email"
+              inputmode="email"
+              maxlength="256"
+              placeholder="jane@company.com"
+              [attr.aria-invalid]="hasError('email')"
+              [attr.aria-describedby]="hasError('email') ? 'email-error' : null"
+              (input)="clearBackendError('email')"
+            />
+            @if (hasError('email')) {
+              <p id="email-error" class="field-error" role="alert">{{ fieldError('email') }}</p>
+            }
+          </div>
+
+          <div class="field">
+            <label for="password">Password</label>
+            <div class="password-field">
+              <input
+                id="password"
+                [type]="showPassword() ? 'text' : 'password'"
+                formControlName="password"
+                autocomplete="new-password"
+                maxlength="128"
+                placeholder="Create a strong password"
+                [attr.aria-invalid]="hasError('password')"
+                [attr.aria-describedby]="
+                  hasError('password') ? 'password-error password-hint' : 'password-hint'
+                "
+                (input)="clearBackendError('password')"
+              />
+              <button
+                type="button"
+                class="visibility-button"
+                [attr.aria-label]="showPassword() ? 'Hide password' : 'Show password'"
+                [attr.aria-pressed]="showPassword()"
+                (click)="showPassword.set(!showPassword())"
+              >
+                @if (showPassword()) {
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="m3 3 18 18M10.6 10.7a2 2 0 0 0 2.7 2.7M9.9 4.3A10.6 10.6 0 0 1 21 12a11.5 11.5 0 0 1-2.3 3.6M6.3 6.3A11.4 11.4 0 0 0 3 12a10.7 10.7 0 0 0 11.7 7.4"
+                    />
+                  </svg>
+                } @else {
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M3 12s3-7 9-7 9 7 9 7-3 7-9 7-9-7-9-7Zm9 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+                    />
+                  </svg>
+                }
+              </button>
+            </div>
+            <p id="password-hint" class="field-hint">
+              8–128 characters with upper and lowercase letters, a number, and a symbol.
+            </p>
+            @if (hasError('password')) {
+              <p id="password-error" class="field-error" role="alert">
+                {{ fieldError('password') }}
+              </p>
+            }
+          </div>
+
+          <div class="field">
+            <label for="confirmPassword">Confirm password</label>
+            <div class="password-field">
+              <input
+                id="confirmPassword"
+                [type]="showConfirmPassword() ? 'text' : 'password'"
+                formControlName="confirmPassword"
+                autocomplete="new-password"
+                maxlength="128"
+                placeholder="Repeat your password"
+                [attr.aria-invalid]="hasError('confirmPassword')"
+                [attr.aria-describedby]="
+                  hasError('confirmPassword') ? 'confirm-password-error' : null
+                "
+                (input)="clearBackendError('confirmPassword')"
+              />
+              <button
+                type="button"
+                class="visibility-button"
+                [attr.aria-label]="
+                  showConfirmPassword() ? 'Hide confirmed password' : 'Show confirmed password'
+                "
+                [attr.aria-pressed]="showConfirmPassword()"
+                (click)="showConfirmPassword.set(!showConfirmPassword())"
+              >
+                @if (showConfirmPassword()) {
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="m3 3 18 18M10.6 10.7a2 2 0 0 0 2.7 2.7M9.9 4.3A10.6 10.6 0 0 1 21 12a11.5 11.5 0 0 1-2.3 3.6M6.3 6.3A11.4 11.4 0 0 0 3 12a10.7 10.7 0 0 0 11.7 7.4"
+                    />
+                  </svg>
+                } @else {
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M3 12s3-7 9-7 9 7 9 7-3 7-9 7-9-7-9-7Zm9 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+                    />
+                  </svg>
+                }
+              </button>
+            </div>
+            @if (hasError('confirmPassword')) {
+              <p id="confirm-password-error" class="field-error" role="alert">
+                {{ fieldError('confirmPassword') }}
+              </p>
+            }
+          </div>
+
+          <button class="submit-button" type="submit" [disabled]="submitting()">
+            @if (submitting()) {
+              <span class="spinner" aria-hidden="true"></span><span>Creating account…</span>
+            } @else {
+              <span>Create account</span>
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M4 10h12m-4.5-4.5L16 10l-4.5 4.5" />
+              </svg>
+            }
+          </button>
+          <p class="sign-in-copy">Already have an account? <a routerLink="/login">Sign in</a></p>
+        </form>
+      }
+    </div>
+  </section>
+</main>

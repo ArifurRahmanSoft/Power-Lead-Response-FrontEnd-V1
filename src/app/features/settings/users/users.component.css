@@ -1,0 +1,33 @@
+.user-email {
+  display: block;
+  margin-top: 0.15rem;
+  color: #818981;
+  font-size: 0.7rem;
+}
+.readonly-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  padding: 0.8rem;
+  border-radius: 0.55rem;
+  background: #f5f7f2;
+  color: #405249;
+  font-size: 0.78rem;
+}
+.readonly-details span {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.readonly-details small {
+  color: #7b847d;
+  font-weight: 700;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}

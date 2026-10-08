@@ -1,0 +1,144 @@
+@if (!auth.hasPermission(permissions.settingsRolesView)) {
+  <p class="alert" role="alert">
+    The backend role selector uses the protected Role list endpoint. Ask an owner to grant
+    <code>settings.roles.view</code> before configuring menu permissions.
+  </p>
+} @else {
+  <div class="permission-toolbar">
+    <div class="form-field role-select">
+      <label for="permission-role">Role</label>
+      <select
+        id="permission-role"
+        [value]="selectedRoleId()"
+        [disabled]="loading() || saving()"
+        (change)="roleChanged($event)"
+      >
+        @for (role of roles(); track role.id) {
+          <option [value]="role.id">{{ role.name }}{{ role.is_system ? ' · System' : '' }}</option>
+        }
+      </select>
+    </div>
+    <div class="save-actions">
+      <button
+        class="secondary-button"
+        type="button"
+        [disabled]="!dirty() || saving()"
+        (click)="cancel()"
+      >
+        Cancel
+      </button>
+      <button
+        class="primary-button"
+        type="button"
+        [disabled]="!dirty() || saving() || editorLocked()"
+        (click)="save()"
+      >
+        {{ saving() ? 'Saving…' : 'Save permissions' }}
+      </button>
+    </div>
+  </div>
+
+  @if (auth.role() !== 'owner') {
+    <p class="delegation-note">
+      Delegated managers can only grant permissions they currently hold and cannot grant privileged
+      Settings permissions. The backend enforces this limit.
+    </p>
+  }
+  @if (selectedRole()?.is_system && auth.role() !== 'owner') {
+    <p class="alert">This system role is locked for delegated managers.</p>
+  }
+  @if (selectedRole()?.key === 'owner') {
+    <p class="delegation-note">
+      Required owner administration permissions are locked to prevent removal of essential workspace
+      management access.
+    </p>
+  }
+  @if (successMessage()) {
+    <p class="notice" role="status">{{ successMessage() }}</p>
+  }
+  @if (errorMessage()) {
+    <p class="alert" role="alert">{{ errorMessage() }}</p>
+  }
+  @if (dirty()) {
+    <p class="unsaved" role="status">You have unsaved changes.</p>
+  }
+
+  <section class="panel" aria-label="Menu permission matrix">
+    @if (loading()) {
+      <div class="state-box" role="status">Loading permissions…</div>
+    } @else if (!selectedRole()) {
+      <div class="state-box">No roles are available.</div>
+    } @else {
+      <div class="table-wrap permission-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Menu</th>
+              <th>View</th>
+              <th>Create</th>
+              <th>Update</th>
+              <th>Delete</th>
+              <th>Additional actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (item of mainMenus(); track item.key) {
+              <ng-container
+                [ngTemplateOutlet]="permissionRow"
+                [ngTemplateOutletContext]="{ $implicit: item }"
+              />
+            }
+            @if (settingsMenus().length) {
+              <tr class="group-row">
+                <th colspan="6">Settings</th>
+              </tr>
+              @for (item of settingsMenus(); track item.key) {
+                <ng-container
+                  [ngTemplateOutlet]="permissionRow"
+                  [ngTemplateOutletContext]="{ $implicit: item }"
+                />
+              }
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </section>
+
+  <ng-template #permissionRow let-item>
+    <tr>
+      <td>
+        <strong>{{ item.label }}</strong>
+      </td>
+      @for (action of standardActions; track action) {
+        <td class="check-cell">
+          @if (hasAction(item, action)) {
+            <input
+              type="checkbox"
+              [checked]="isChecked(item, action)"
+              [disabled]="isLocked(item, action)"
+              [attr.aria-label]="item.label + ' ' + action"
+              (change)="toggle(item, action, $any($event.target).checked)"
+            />
+          } @else {
+            <span aria-label="Not applicable">—</span>
+          }
+        </td>
+      }
+      <td class="additional-cell">
+        @for (action of additionalActions(item); track action) {
+          <label
+            ><input
+              type="checkbox"
+              [checked]="isChecked(item, action)"
+              [disabled]="isLocked(item, action)"
+              (change)="toggle(item, action, $any($event.target).checked)"
+            />{{ actionLabel(action) }}</label
+          >
+        } @empty {
+          <span aria-label="No additional actions">—</span>
+        }
+      </td>
+    </tr>
+  </ng-template>
+}

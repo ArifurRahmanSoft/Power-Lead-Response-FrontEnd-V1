@@ -1,0 +1,173 @@
+<section class="voice-card" aria-labelledby="voice-fill-title">
+  <header class="voice-header">
+    <span class="voice-icon" aria-hidden="true">
+      <svg viewBox="0 0 24 24">
+        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3M8 22h8" />
+      </svg>
+    </span>
+    <span>
+      <span class="voice-kicker">Optional assistant</span>
+      <h2 id="voice-fill-title">Fill by Voice</h2>
+      <p>
+        Dictate lead details, review the draft, then choose what to apply. Nothing is saved
+        automatically.
+      </p>
+    </span>
+  </header>
+
+  <div class="voice-body">
+    @if (!supported()) {
+      <div class="voice-message error" role="alert">
+        Voice recording is not supported here. Use a current browser on localhost or HTTPS, or
+        continue with manual entry.
+      </div>
+    } @else if (state() === 'idle') {
+      <div class="voice-ready">
+        <p>
+          Speak naturally and include only the details you want to add. Maximum recording: 2
+          minutes.
+        </p>
+        <button class="voice-primary" type="button" (click)="startRecording()">
+          <span aria-hidden="true">●</span> Start Recording
+        </button>
+      </div>
+    } @else if (state() === 'starting') {
+      <div class="voice-status" role="status">
+        <span class="voice-spinner" aria-hidden="true"></span>
+        <span
+          ><strong>Requesting microphone access…</strong
+          ><small>Approve access in your browser to begin.</small></span
+        >
+        <button class="voice-secondary" type="button" (click)="cancel()">Cancel</button>
+      </div>
+    } @else if (state() === 'recording') {
+      <div class="voice-status recording" role="status">
+        <span class="recording-pulse" aria-hidden="true"></span>
+        <span
+          ><strong>Recording</strong><small>{{ formattedTime() }}</small></span
+        >
+        <span class="voice-status-actions">
+          <button class="voice-primary" type="button" (click)="stopRecording()">Stop</button>
+          <button class="voice-secondary" type="button" (click)="cancel()">Cancel</button>
+        </span>
+      </div>
+    } @else if (state() === 'processing') {
+      <div class="voice-status" role="status">
+        <span class="voice-spinner" aria-hidden="true"></span>
+        <span
+          ><strong>Processing recording…</strong
+          ><small>Transcribing and preparing an editable draft.</small></span
+        >
+        <button class="voice-secondary" type="button" (click)="cancel()">Cancel</button>
+      </div>
+    } @else if (state() === 'error') {
+      <div class="voice-message error" role="alert">{{ errorMessage() }}</div>
+      <div class="voice-error-actions">
+        @if (canRetryExtraction()) {
+          <button class="voice-primary" type="button" (click)="retryExtraction()">
+            Retry Extraction
+          </button>
+        }
+        <button class="voice-secondary" type="button" (click)="startRecording()">
+          Record Again
+        </button>
+        <button class="voice-text-button" type="button" (click)="reset()">Dismiss</button>
+      </div>
+    } @else if (state() === 'review') {
+      <div class="voice-review-heading">
+        <span>
+          <span class="voice-kicker">Review before applying</span>
+          <h3>Voice draft</h3>
+        </span>
+        <button class="voice-text-button" type="button" (click)="startRecording()">
+          Record Again
+        </button>
+      </div>
+
+      <div class="transcript-panel">
+        <strong>Transcript</strong>
+        <p>{{ transcript() }}</p>
+      </div>
+
+      @if (reviewWarnings().length) {
+        <div class="voice-message warning" role="status">
+          <strong>Review warnings</strong>
+          <ul>
+            @for (warning of reviewWarnings(); track warning) {
+              <li>{{ warning }}</li>
+            }
+          </ul>
+        </div>
+      }
+
+      @if (fieldErrors().length) {
+        <div class="voice-message error" role="alert">
+          <strong>Some extracted values need attention.</strong>
+          <span>Use the transcript to correct the highlighted fields before applying.</span>
+          <ul>
+            @for (error of fieldErrors(); track error.field + error.message) {
+              <li>
+                <strong>{{ errorFieldLabel(error.field) }}:</strong> {{ error.message }}
+              </li>
+            }
+          </ul>
+        </div>
+      }
+
+      <div class="voice-review-form" [formGroup]="reviewForm">
+        <div class="voice-review-grid">
+          @for (field of reviewFields; track field.name) {
+            <label
+              [class.full]="field.kind === 'textarea'"
+              [class.has-error]="fieldError(field.name)"
+            >
+              <span>{{ field.label }}</span>
+              @if (field.kind === 'textarea') {
+                <textarea [formControlName]="field.name" rows="4"></textarea>
+              } @else if (field.kind === 'select') {
+                <select [formControlName]="field.name">
+                  <option value="">Not provided</option>
+                  @for (option of field.options; track option) {
+                    <option [value]="option">{{ labelValue(option) }}</option>
+                  }
+                </select>
+              } @else {
+                <input
+                  [type]="field.kind === 'email' ? 'email' : 'text'"
+                  [attr.inputmode]="
+                    field.kind === 'tel'
+                      ? 'tel'
+                      : field.kind === 'url'
+                        ? 'url'
+                        : field.kind === 'decimal'
+                          ? 'decimal'
+                          : null
+                  "
+                  [placeholder]="field.placeholder || ''"
+                  [formControlName]="field.name"
+                />
+              }
+              @if (fieldError(field.name)) {
+                <small class="voice-field-error">{{ fieldError(field.name) }}</small>
+              }
+            </label>
+          }
+        </div>
+        @if (reviewForm.hasError('revenueIncomplete') && (reviewForm.dirty || reviewForm.touched)) {
+          <p class="voice-field-error" role="alert">
+            Revenue amount, currency, and period must be provided together.
+          </p>
+        }
+        <div class="voice-review-actions">
+          <p>
+            Applying updates the form only. Review the main form and use its Save button when ready.
+          </p>
+          <button class="voice-primary" type="button" (click)="requestApply()">
+            Apply to Form
+          </button>
+        </div>
+      </div>
+    }
+  </div>
+</section>

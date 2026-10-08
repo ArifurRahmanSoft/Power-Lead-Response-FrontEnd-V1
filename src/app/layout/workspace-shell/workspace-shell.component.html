@@ -1,0 +1,47 @@
+<div class="app-frame">
+  <aside class="sidebar">
+    <a class="brand" routerLink="/overview" aria-label="PowerLead overview">
+      <span class="brand-mark">P</span>
+      <span>PowerLead</span>
+    </a>
+
+    <div class="workspace-control">
+      <label for="workspace">Workspace</label>
+      <select
+        id="workspace"
+        [value]="auth.selectedWorkspace()?.id ?? ''"
+        [disabled]="switchingWorkspace() || auth.workspaces().length < 2"
+        (change)="switchWorkspace($event)"
+      >
+        @for (workspace of auth.workspaces(); track workspace.id) {
+          <option [value]="workspace.id">{{ workspace.name }}</option>
+        }
+      </select>
+      @if (workspaceError()) {
+        <p class="workspace-error" role="alert">{{ workspaceError() }}</p>
+      }
+    </div>
+
+    <nav aria-label="Workspace navigation">
+      @for (item of menuItems(); track item.path) {
+        <a [routerLink]="item.path" routerLinkActive="active">
+          <span class="nav-icon" aria-hidden="true">{{ item.label.charAt(0) }}</span>
+          <span>{{ item.label }}</span>
+        </a>
+      }
+    </nav>
+
+    <div class="account-card">
+      <span class="avatar" aria-hidden="true">{{ auth.user()?.name?.charAt(0) }}</span>
+      <span class="account-copy">
+        <strong>{{ auth.user()?.name }}</strong>
+        <small>{{ auth.role() }}</small>
+      </span>
+      <button type="button" (click)="logout()">Sign out</button>
+    </div>
+  </aside>
+
+  <main class="workspace-content">
+    <router-outlet />
+  </main>
+</div>

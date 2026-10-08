@@ -1,0 +1,302 @@
+<header class="lead-page-header">
+  <div>
+    <a class="back-link" routerLink="/leads">← Back to leads</a>
+    <p class="eyebrow">Bulk operation</p>
+    <h1>Import leads from Excel</h1>
+    <p>Preview and validate every row before anything is inserted.</p>
+  </div>
+  <button
+    class="secondary-button"
+    type="button"
+    [disabled]="downloading()"
+    (click)="downloadTemplate()"
+  >
+    {{ downloading() ? 'Preparing…' : 'Download .xlsx template' }}
+  </button>
+</header>
+
+<div class="import-callout">
+  <strong>Import policy</strong>
+  <p>
+    Valid rows are inserted, active-email duplicates are skipped, and invalid rows are reported with
+    their original Excel row numbers. Uploading or importing never authorizes automatic messaging.
+  </p>
+  <p>
+    Country names are accepted (for example Bangladesh, United States, and Australia). URLs may omit
+    <code>https://</code>, and <code>service_requested</code> is optional, so older workbooks remain
+    supported.
+  </p>
+</div>
+@if (message()) {
+  <p
+    class="lead-alert"
+    [class.success]="batch()?.status === 'completed' || batch()?.status === 'completed_with_errors'"
+    role="status"
+  >
+    {{ message() }}
+  </p>
+}
+
+@if (loadingBatch()) {
+  <div class="lead-state" role="status">Checking backend batch status…</div>
+} @else if (!batch()) {
+  <section class="import-card">
+    <div class="step-heading">
+      <span>1</span>
+      <div>
+        <h2>Select workbook</h2>
+        <p>
+          Use a macro-free .xlsx file, up to 5 MB and {{ maxRows }} data rows. The server enforces
+          the deployment’s configured limits.
+        </p>
+      </div>
+    </div>
+    <label class="file-drop"
+      ><input
+        type="file"
+        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        (change)="chooseFile($event)"
+      /><span>{{ file()?.name || 'Choose an .xlsx workbook' }}</span
+      ><small>
+        @if (file(); as selected) {
+          {{ (selected.size / 1024 / 1024).toFixed(2) }} MB
+        } @else {
+          Required columns: first_name, last_name, email
+        }
+      </small></label
+    >
+  </section>
+  <section class="import-card">
+    <div class="step-heading">
+      <span>2</span>
+      <div>
+        <h2>Optional header mapping</h2>
+        <p>
+          Add mappings only when your spreadsheet headers differ from the template. Matching headers
+          are mapped automatically, including the optional <code>service_requested</code> column.
+        </p>
+      </div>
+    </div>
+    @for (row of mappingRows(); track $index; let index = $index) {
+      <div class="mapping-row">
+        <label
+          >Spreadsheet header<input
+            [value]="row.source"
+            (input)="updateMapping(index, 'source', $event)"
+            placeholder="Given Name" /></label
+        ><span>→</span
+        ><label
+          >PowerLead field<select
+            [value]="row.target"
+            (change)="updateMapping(index, 'target', $event)"
+          >
+            <option value="">Select field</option>
+            @for (field of canonicalFields; track field) {
+              <option [value]="field">{{ field }}</option>
+            }
+          </select></label
+        ><button type="button" aria-label="Remove mapping" (click)="removeMapping(index)">×</button>
+      </div>
+    }
+    <button class="text-button" type="button" (click)="addMapping()">+ Add header mapping</button>
+  </section>
+  <div class="lead-form-actions">
+    <button
+      class="primary-button"
+      type="button"
+      [disabled]="!file() || uploading()"
+      (click)="preview()"
+    >
+      {{ uploading() ? 'Uploading and validating…' : 'Upload and preview' }}
+    </button>
+  </div>
+} @else if (batch(); as current) {
+  <section class="import-card">
+    <div class="batch-header">
+      <div>
+        <p class="eyebrow">Batch {{ current.id }}</p>
+        <h2>{{ current.file_name }}</h2>
+        <p>
+          Backend status: <strong>{{ current.status }}</strong> · Preview expires
+          {{ current.expires_at | date: 'medium' }}
+        </p>
+      </div>
+      <button class="text-button" type="button" (click)="reset()">Start another import</button>
+    </div>
+    @if (current.status === 'committing' || committing()) {
+      <div class="backend-progress" role="status">
+        <span class="spinner"></span>
+        <div>
+          <strong>The backend is processing this batch.</strong>
+          <p>Waiting for the real final counts; no estimated percentage is shown.</p>
+        </div>
+      </div>
+    }
+    <div class="summary-grid">
+      <div>
+        <strong>{{ current.summary.total }}</strong
+        ><span>Total rows</span>
+      </div>
+      <div>
+        <strong>{{ current.summary.valid }}</strong
+        ><span>Valid</span>
+      </div>
+      <div>
+        <strong>{{ current.summary.duplicate }}</strong
+        ><span>Duplicates</span>
+      </div>
+      <div>
+        <strong>{{ current.summary.invalid }}</strong
+        ><span>Invalid</span>
+      </div>
+      <div>
+        <strong>{{ current.summary.inserted }}</strong
+        ><span>Inserted</span>
+      </div>
+      <div>
+        <strong>{{ current.summary.failed }}</strong
+        ><span>Failed</span>
+      </div>
+    </div>
+    @if (current.mapping | keyvalue; as mappings) {
+      @if (mappings.length) {
+        <details>
+          <summary>Applied header mapping ({{ mappings.length }})</summary>
+          <div class="mapping-summary">
+            @for (mapping of mappings; track mapping.key) {
+              <span
+                ><code>{{ mapping.key }}</code> → <code>{{ mapping.value }}</code></span
+              >
+            }
+          </div>
+        </details>
+      }
+    }
+  </section>
+
+  @if (errorTotal()) {
+    <section class="import-card">
+      <div class="batch-header">
+        <div>
+          <h2>Rows needing attention</h2>
+          <p>Excel row numbers refer to the original workbook, including its header row.</p>
+        </div>
+        <button
+          class="secondary-button"
+          type="button"
+          [disabled]="downloading()"
+          (click)="downloadErrorReport()"
+        >
+          Download error report
+        </button>
+      </div>
+      <div class="lead-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Excel row</th>
+              <th>Status</th>
+              <th>Field</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of errors(); track row.row_number) {
+              @for (error of row.errors; track $index) {
+                <tr>
+                  <td>{{ row.row_number }}</td>
+                  <td>
+                    <span class="lead-badge">{{ row.status }}</span>
+                  </td>
+                  <td>
+                    <strong>{{ fieldLabel(error.field) }}</strong>
+                  </td>
+                  <td>{{ error.message }}</td>
+                </tr>
+              }
+            }
+          </tbody>
+        </table>
+      </div>
+      <div class="lead-pagination">
+        <span
+          >Page {{ errorPage() }} of {{ errorPageCount() }} · {{ errorTotal() }} affected rows</span
+        >
+        <div>
+          <button
+            type="button"
+            [disabled]="errorPage() <= 1"
+            (click)="loadErrorPage(errorPage() - 1)"
+          >
+            Previous</button
+          ><button
+            type="button"
+            [disabled]="errorPage() >= errorPageCount()"
+            (click)="loadErrorPage(errorPage() + 1)"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+    </section>
+  }
+
+  @if (current.status === 'previewed') {
+    <section class="import-confirm">
+      <div>
+        <strong>Ready to import {{ current.summary.valid }} valid rows?</strong>
+        <p>Duplicates will remain skipped. Invalid rows will not be inserted.</p>
+      </div>
+      <button
+        class="primary-button"
+        type="button"
+        [disabled]="committing() || current.summary.valid === 0"
+        (click)="confirmOpen.set(true)"
+      >
+        Import valid rows
+      </button>
+    </section>
+  } @else if (current.status === 'completed' || current.status === 'completed_with_errors') {
+    <section class="completion-card">
+      <span>✓</span>
+      <div>
+        <h2>Import complete</h2>
+        <p>
+          {{ current.summary.inserted }} inserted, {{ current.summary.duplicate }} duplicates
+          skipped, {{ current.summary.invalid + current.summary.failed }} invalid or failed.
+        </p>
+        <a routerLink="/leads">View leads</a>
+      </div>
+    </section>
+  }
+}
+
+@if (confirmOpen() && batch(); as current) {
+  <div class="lead-modal-backdrop">
+    <section
+      class="lead-modal"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="import-confirm-title"
+    >
+      <p class="eyebrow">Final confirmation</p>
+      <h2 id="import-confirm-title">Import {{ current.summary.valid }} valid rows?</h2>
+      <p>
+        This creates lead records now. Duplicates are skipped and invalid rows remain in the report.
+        It does not send or authorize customer messages.
+      </p>
+      <div class="lead-form-actions">
+        <button
+          class="secondary-button"
+          type="button"
+          [disabled]="committing()"
+          (click)="confirmOpen.set(false)"
+        >
+          Review preview</button
+        ><button class="primary-button" type="button" [disabled]="committing()" (click)="commit()">
+          Confirm import
+        </button>
+      </div>
+    </section>
+  </div>
+}

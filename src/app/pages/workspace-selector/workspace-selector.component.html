@@ -1,0 +1,35 @@
+<main class="state-page">
+  <section class="state-card" aria-labelledby="workspace-heading">
+    <p class="eyebrow">Choose a workspace</p>
+    <h1 id="workspace-heading">Where would you like to work?</h1>
+    <p class="intro">Your permissions and navigation will update for the selected workspace.</p>
+
+    <div class="workspace-list" role="radiogroup" aria-label="Available workspaces">
+      @for (workspace of auth.workspaces(); track workspace.id) {
+        <button
+          type="button"
+          class="workspace-option"
+          [class.selected]="selectedId() === workspace.id"
+          [attr.aria-checked]="selectedId() === workspace.id"
+          role="radio"
+          (click)="select(workspace.id)"
+        >
+          <span class="workspace-letter">{{ workspace.name.charAt(0) }}</span>
+          <span
+            ><strong>{{ workspace.name }}</strong
+            ><small>{{ workspace.role }}</small></span
+          >
+        </button>
+      }
+    </div>
+
+    @if (errorMessage()) {
+      <p class="error" role="alert">{{ errorMessage() }}</p>
+    }
+
+    <button class="primary" type="button" [disabled]="submitting()" (click)="continue()">
+      {{ submitting() ? 'Switching…' : 'Continue' }}
+    </button>
+    <button class="link-button" type="button" (click)="logout()">Sign out</button>
+  </section>
+</main>

@@ -1,0 +1,13 @@
+.role-key {
+  display: block;
+  margin-top: 0.15rem;
+  color: #818981;
+  font-size: 0.7rem;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}

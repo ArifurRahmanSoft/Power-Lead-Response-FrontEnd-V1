@@ -1,0 +1,60 @@
+:host {
+  display: block;
+  min-height: 100dvh;
+}
+.pending-page {
+  display: grid;
+  min-height: 100dvh;
+  padding: 2rem;
+  place-items: center;
+  background: #f5f7f2;
+}
+.pending-card {
+  width: min(100%, 32rem);
+  padding: clamp(2rem, 6vw, 4rem);
+  border: 1px solid #dce3d8;
+  border-radius: 1rem;
+  background: #fff;
+  text-align: center;
+}
+.status-icon {
+  display: grid;
+  width: 4rem;
+  height: 4rem;
+  margin: 0 auto 1.5rem;
+  place-items: center;
+  border-radius: 50%;
+  color: #1e5748;
+  background: #e9f0d4;
+  font-size: 1.5rem;
+  font-weight: 800;
+}
+.eyebrow {
+  margin: 0 0 0.8rem;
+  color: #709166;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+h1 {
+  margin: 0;
+  color: #18291e;
+  font-family: Georgia, serif;
+  font-size: clamp(2rem, 6vw, 2.7rem);
+  font-weight: 400;
+}
+p {
+  color: #707a72;
+  line-height: 1.65;
+}
+button {
+  margin-top: 1rem;
+  padding: 0.75rem 1.2rem;
+  border: 0;
+  border-radius: 0.6rem;
+  color: #fff;
+  background: #1e5748;
+  font-weight: 700;
+  cursor: pointer;
+}

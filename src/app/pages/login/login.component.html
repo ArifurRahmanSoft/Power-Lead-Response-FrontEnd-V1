@@ -1,0 +1,113 @@
+<main class="login-page">
+  <app-register-hero />
+
+  <section class="form-panel" aria-labelledby="login-heading">
+    <div class="form-shell">
+      <div class="form-heading">
+        <p class="eyebrow">Account access</p>
+        <h2 id="login-heading">Sign in</h2>
+        <p>Enter your account details to continue.</p>
+      </div>
+
+      @if (signedIn()) {
+        <div class="success-alert" role="status" aria-live="polite">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="m5 10.5 3 3 7-7" />
+          </svg>
+          <span>You’re signed in successfully.</span>
+        </div>
+      }
+
+      @if (submissionError()) {
+        <div class="form-alert" role="alert">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M10 6.2v4.3m0 3.1v.2M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" />
+          </svg>
+          <span>{{ submissionError() }}</span>
+        </div>
+      }
+
+      <form #loginForm [formGroup]="form" (ngSubmit)="submit()" novalidate>
+        <div class="field">
+          <label for="identifier">User ID or Email</label>
+          <input
+            id="identifier"
+            type="text"
+            formControlName="identifier"
+            autocomplete="username"
+            placeholder="your.user.id or you@company.com"
+            [attr.aria-invalid]="hasError('identifier')"
+            [attr.aria-describedby]="hasError('identifier') ? 'identifier-error' : null"
+            (input)="clearBackendError('identifier')"
+          />
+          @if (hasError('identifier')) {
+            <p id="identifier-error" class="field-error" role="alert">
+              {{ fieldError('identifier') }}
+            </p>
+          }
+        </div>
+
+        <div class="field">
+          <div class="password-label-row">
+            <label for="password">Password</label>
+            <a routerLink="/forgot-password">Forgot password?</a>
+          </div>
+          <div class="password-field">
+            <input
+              id="password"
+              [type]="showPassword() ? 'text' : 'password'"
+              formControlName="password"
+              autocomplete="current-password"
+              placeholder="Enter your password"
+              [attr.aria-invalid]="hasError('password')"
+              [attr.aria-describedby]="hasError('password') ? 'password-error' : null"
+              (input)="clearBackendError('password')"
+            />
+            <button
+              type="button"
+              class="visibility-button"
+              [attr.aria-label]="showPassword() ? 'Hide password' : 'Show password'"
+              [attr.aria-pressed]="showPassword()"
+              (click)="showPassword.set(!showPassword())"
+            >
+              @if (showPassword()) {
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="m3 3 18 18M10.6 10.7a2 2 0 0 0 2.7 2.7M9.9 4.3A10.6 10.6 0 0 1 21 12a11.5 11.5 0 0 1-2.3 3.6M6.3 6.3A11.4 11.4 0 0 0 3 12a10.7 10.7 0 0 0 11.7 7.4"
+                  />
+                </svg>
+              } @else {
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M3 12s3-7 9-7 9 7 9 7-3 7-9 7-9-7-9-7Zm9 3a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+                  />
+                </svg>
+              }
+            </button>
+          </div>
+          @if (hasError('password')) {
+            <p id="password-error" class="field-error" role="alert">
+              {{ fieldError('password') }}
+            </p>
+          }
+        </div>
+
+        <button class="submit-button" type="submit" [disabled]="submitting()">
+          @if (submitting()) {
+            <span class="spinner" aria-hidden="true"></span>
+            <span>Signing in…</span>
+          } @else {
+            <span>Sign in</span>
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M4 10h12m-4.5-4.5L16 10l-4.5 4.5" />
+            </svg>
+          }
+        </button>
+
+        <p class="register-copy">
+          New to PowerLead? <a routerLink="/register">Create an account</a>
+        </p>
+      </form>
+    </div>
+  </section>
+</main>

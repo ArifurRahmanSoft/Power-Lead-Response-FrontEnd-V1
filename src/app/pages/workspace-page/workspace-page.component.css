@@ -1,0 +1,70 @@
+:host {
+  display: block;
+}
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+.page-header p {
+  margin: 0 0 0.55rem;
+  color: #709166;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.page-header h1 {
+  margin: 0;
+  color: #18291e;
+  font-family: Georgia, serif;
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 400;
+}
+.page-header span {
+  display: block;
+  margin-top: 0.55rem;
+  color: #707a72;
+}
+.page-header button {
+  padding: 0.75rem 1rem;
+  border: 0;
+  border-radius: 0.6rem;
+  color: #fff;
+  background: #1e5748;
+  font-weight: 700;
+  cursor: pointer;
+}
+.empty-card {
+  display: grid;
+  min-height: 22rem;
+  padding: 3rem;
+  place-content: center;
+  border: 1px solid #dce3d8;
+  border-radius: 1rem;
+  background: #fff;
+  text-align: center;
+}
+.empty-card > span {
+  display: grid;
+  width: 3rem;
+  height: 3rem;
+  margin: 0 auto 1rem;
+  place-items: center;
+  border-radius: 0.75rem;
+  color: #1e5748;
+  background: #edf3dc;
+  font-weight: 800;
+}
+.empty-card h2 {
+  margin: 0;
+  color: #24352a;
+  font-size: 1.05rem;
+}
+.empty-card p {
+  margin: 0.55rem 0 0;
+  color: #7b837d;
+  font-size: 0.88rem;
+}

@@ -1,0 +1,269 @@
+<a class="back-link" routerLink="/leads">← Back to leads</a>
+@if (loading()) {
+  <div class="lead-state" role="status">Loading lead…</div>
+} @else if (permissionDenied()) {
+  <div class="lead-state error">
+    <strong>Permission denied</strong>
+    <p>This lead is outside your assigned scope or your role cannot view it.</p>
+  </div>
+} @else if (errorMessage() && !lead()) {
+  <div class="lead-state error" role="alert">
+    <strong>We couldn’t load this lead.</strong>
+    <p>{{ errorMessage() }}</p>
+    <button class="secondary-button" type="button" (click)="load()">Try again</button>
+  </div>
+} @else if (lead(); as current) {
+  <header class="lead-page-header detail-header">
+    <div>
+      <p class="eyebrow">{{ current.tracking_id }}</p>
+      <h1>{{ current.first_name }} {{ current.last_name }}</h1>
+      <p>
+        {{ current.designation || 'No designation'
+        }}{{ current.company ? ' at ' + current.company : '' }}
+      </p>
+    </div>
+    <div class="header-actions">
+      @if (auth.hasPermission(permissions.leadsUpdate)) {
+        <a class="secondary-button button-link" [routerLink]="['/leads', current.id, 'edit']"
+          >Edit details</a
+        >
+      }
+      @if (auth.hasPermission(permissions.leadsDelete)) {
+        <button class="danger-button" type="button" (click)="archiveOpen.set(true)">Archive</button>
+      }
+    </div>
+  </header>
+  @if (notice()) {
+    <p class="lead-notice" role="status">{{ notice() }}</p>
+  }
+  @if (errorMessage()) {
+    <p class="lead-alert" role="alert">{{ errorMessage() }}</p>
+  }
+
+  <div class="detail-layout">
+    <div class="detail-main">
+      <section class="detail-card">
+        <h2>Contact</h2>
+        <dl class="detail-grid">
+          <div>
+            <dt>Email</dt>
+            <dd>
+              <a href="mailto:{{ current.email }}">{{ current.email }}</a>
+            </dd>
+          </div>
+          <div>
+            <dt>Email status</dt>
+            <dd>
+              <span class="lead-badge">{{ label(current.email_status) }}</span>
+            </dd>
+          </div>
+          <div>
+            <dt>Phone</dt>
+            <dd>{{ current.phone || 'Not provided' }}</dd>
+          </div>
+          <div>
+            <dt>Location</dt>
+            <dd>
+              {{
+                current.city || current.state || country(current.country)
+                  ? (current.city || '') +
+                    (current.city && current.state ? ', ' : '') +
+                    (current.state || '') +
+                    ((current.city || current.state) && country(current.country) ? ', ' : '') +
+                    country(current.country)
+                  : 'Not provided'
+              }}
+            </dd>
+          </div>
+        </dl>
+      </section>
+      <section class="detail-card">
+        <h2>Company</h2>
+        <dl class="detail-grid">
+          <div>
+            <dt>Company</dt>
+            <dd>{{ current.company || 'Not provided' }}</dd>
+          </div>
+          <div>
+            <dt>Industry</dt>
+            <dd>{{ current.industry || 'Not provided' }}</dd>
+          </div>
+          <div>
+            <dt>Service requested</dt>
+            <dd>{{ current.service_requested || 'Not provided' }}</dd>
+          </div>
+          <div>
+            <dt>Company size</dt>
+            <dd>{{ label(current.company_size) }}</dd>
+          </div>
+          <div>
+            <dt>Website</dt>
+            <dd>
+              @if (externalUrl(current.company_website); as websiteUrl) {
+                <a [href]="websiteUrl" target="_blank" rel="noopener noreferrer">Open website</a>
+              } @else {
+                Not provided
+              }
+            </dd>
+          </div>
+          <div class="full">
+            <dt>Revenue</dt>
+            <dd>
+              {{
+                current.revenue_amount
+                  ? current.revenue_currency +
+                    ' ' +
+                    current.revenue_amount +
+                    ' · ' +
+                    label(current.revenue_period)
+                  : 'Not provided'
+              }}
+            </dd>
+          </div>
+        </dl>
+      </section>
+      <section class="detail-card">
+        <h2>Social links</h2>
+        <div class="social-links">
+          @if (externalUrl(current.linkedin_url); as linkedinUrl) {
+            <a [href]="linkedinUrl" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+          }
+          @if (externalUrl(current.facebook_url); as facebookUrl) {
+            <a [href]="facebookUrl" target="_blank" rel="noopener noreferrer">Facebook</a>
+          }
+          @if (externalUrl(current.instagram_url); as instagramUrl) {
+            <a [href]="instagramUrl" target="_blank" rel="noopener noreferrer">Instagram</a>
+          }
+          @if (externalUrl(current.x_url); as xUrl) {
+            <a [href]="xUrl" target="_blank" rel="noopener noreferrer">X</a>
+          }
+          @if (externalUrl(current.github_url); as githubUrl) {
+            <a [href]="githubUrl" target="_blank" rel="noopener noreferrer">GitHub</a>
+          }
+          @if (!hasSafeSocial(current)) {
+            <span>None provided</span>
+          }
+        </div>
+      </section>
+      <section class="detail-card">
+        <h2>Notes & consent</h2>
+        <dl class="detail-grid">
+          <div>
+            <dt>Consent status</dt>
+            <dd>{{ label(current.consent_status) }}</dd>
+          </div>
+          <div>
+            <dt>Consent reference</dt>
+            <dd>{{ current.consent_reference || 'Not provided' }}</dd>
+          </div>
+          <div class="full">
+            <dt>Consent evidence</dt>
+            <dd class="preserve-lines">{{ current.consent_evidence || 'Not provided' }}</dd>
+          </div>
+          <div class="full">
+            <dt>Notes</dt>
+            <dd class="preserve-lines">{{ current.notes || 'No notes' }}</dd>
+          </div>
+        </dl>
+      </section>
+    </div>
+    <aside class="detail-side">
+      <section class="detail-card">
+        <h2>Internal handling</h2>
+        <dl>
+          <div>
+            <dt>Status</dt>
+            <dd>
+              <span class="lead-badge status-{{ current.status }}">{{
+                label(current.status)
+              }}</span>
+            </dd>
+          </div>
+          <div>
+            <dt>Source</dt>
+            <dd>{{ label(current.source) }}</dd>
+          </div>
+          <div>
+            <dt>Assignee</dt>
+            <dd>{{ current.assigned_user_id || 'Unassigned' }}</dd>
+          </div>
+          <div>
+            <dt>Row version</dt>
+            <dd>{{ current.row_version }}</dd>
+          </div>
+        </dl>
+        @if (auth.hasPermission(permissions.leadsStatus)) {
+          <div class="status-transition">
+            <h3>Change lifecycle status</h3>
+            @if (nextStatuses().length) {
+              <label
+                >Next status<select [formControl]="statusControl">
+                  <option value="">Select transition</option>
+                  @for (status of nextStatuses(); track status) {
+                    <option [value]="status">{{ label(status) }}</option>
+                  }
+                </select></label
+              ><button
+                class="primary-button"
+                type="button"
+                [disabled]="!statusControl.value || savingStatus()"
+                (click)="updateStatus()"
+              >
+                {{ savingStatus() ? 'Updating…' : 'Update status' }}
+              </button>
+            } @else {
+              <p>Converted is a terminal status.</p>
+            }
+          </div>
+        }
+      </section>
+      <section class="detail-card">
+        <h2>Activity timeline</h2>
+        <ol class="timeline">
+          <li>
+            <span>Created</span><strong>{{ current.created_at | date: 'medium' }}</strong
+            ><small>by {{ current.created_by }}</small>
+          </li>
+          <li>
+            <span>Last updated</span><strong>{{ current.updated_at | date: 'medium' }}</strong
+            ><small>by {{ current.updated_by }}</small>
+          </li>
+        </ol>
+        <p class="section-help">
+          The current API exposes audit timestamps only; event history is retained by the backend
+          but has no lead timeline endpoint.
+        </p>
+      </section>
+    </aside>
+  </div>
+}
+
+@if (archiveOpen() && lead(); as current) {
+  <div class="lead-modal-backdrop">
+    <section
+      class="lead-modal"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="detail-archive-title"
+    >
+      <p class="eyebrow">Archive lead</p>
+      <h2 id="detail-archive-title">Archive {{ current.first_name }} {{ current.last_name }}?</h2>
+      <p>
+        The lead is archived rather than permanently deleted. Pending automatic customer actions
+        stop, while its history remains available to the backend.
+      </p>
+      <div class="lead-form-actions">
+        <button
+          class="secondary-button"
+          type="button"
+          [disabled]="archiving()"
+          (click)="archiveOpen.set(false)"
+        >
+          Cancel</button
+        ><button class="danger-button" type="button" [disabled]="archiving()" (click)="archive()">
+          {{ archiving() ? 'Archiving…' : 'Archive lead' }}
+        </button>
+      </div>
+    </section>
+  </div>
+}

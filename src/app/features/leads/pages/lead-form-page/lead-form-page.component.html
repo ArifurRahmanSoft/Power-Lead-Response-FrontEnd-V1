@@ -1,0 +1,34 @@
+<header class="lead-page-header">
+  <div>
+    <a class="back-link" [routerLink]="editing && leadId ? ['/leads', leadId] : ['/leads']"
+      >← Back to {{ editing ? 'lead' : 'leads' }}</a
+    >
+    <p class="eyebrow">Lead management</p>
+    <h1>{{ editing ? 'Edit lead' : 'Create lead' }}</h1>
+    <p>
+      {{
+        editing
+          ? 'Update contact and company information. Lifecycle status changes are managed on the lead detail page.'
+          : 'Add a lead manually. Creating a lead does not schedule or authorize customer messaging.'
+      }}
+    </p>
+  </div>
+  @if (lead(); as current) {
+    <div class="read-only-meta">
+      <span>Tracking ID</span><strong>{{ current.tracking_id }}</strong
+      ><small>Version {{ current.row_version }}</small>
+    </div>
+  }
+</header>
+
+@if (loading()) {
+  <div class="lead-state" role="status">Loading lead…</div>
+} @else if (errorMessage()) {
+  <div class="lead-state error" role="alert">
+    <strong>We couldn’t load this lead.</strong>
+    <p>{{ errorMessage() }}</p>
+    <button class="secondary-button" type="button" (click)="loadLead()">Try again</button>
+  </div>
+} @else if (!editing || lead()) {
+  <app-lead-form [lead]="lead()" (saved)="finish($event)" (cancelled)="cancel()" />
+}

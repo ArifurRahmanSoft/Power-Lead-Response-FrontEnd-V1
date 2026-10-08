@@ -1,0 +1,247 @@
+<header class="lead-page-header">
+  <div>
+    <p class="eyebrow">Workspace records</p>
+    <h1>Leads</h1>
+    <p>Search, filter, and manage the leads available to your role.</p>
+  </div>
+  <div class="header-actions">
+    @if (auth.hasPermission(permissions.leadsImport)) {
+      <a class="secondary-button button-link" routerLink="/leads/import">Import Excel</a>
+    }
+    @if (auth.hasPermission(permissions.leadsCreate)) {
+      <a class="primary-button button-link" routerLink="/leads/new">Add lead</a>
+    }
+  </div>
+</header>
+
+<form class="lead-filter-panel" [formGroup]="filters" (ngSubmit)="applyFilters()">
+  <div class="filter-panel-heading">
+    <div>
+      <p class="eyebrow">Lead finder</p>
+      <h2>Find the right lead</h2>
+      <p>Search your records, then narrow the results with the filters below.</p>
+    </div>
+    <div class="filter-actions">
+      <button class="secondary-button" type="button" (click)="clearFilters()">Reset</button>
+      <button class="primary-button" type="submit">Apply filters</button>
+    </div>
+  </div>
+  <label class="search-wide">
+    Search leads
+    <span class="search-control">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-width="2"
+        />
+      </svg>
+      <input
+        type="search"
+        formControlName="search"
+        placeholder="Search by name, email, or tracking ID"
+      />
+    </span>
+  </label>
+  <label class="hidden-filter">Company<input formControlName="company" /></label>
+  <label class="hidden-filter">Industry<input formControlName="industry" /></label>
+  <label class="service-filter" for="service-requested-filter">
+    Service Requested
+    <select
+      id="service-requested-filter"
+      class="service-requested-select"
+      formControlName="serviceRequested"
+      [attr.aria-busy]="serviceOptionsLoading()"
+    >
+      <option value="">All services</option>
+      @for (option of serviceOptions(); track option.value) {
+        <option [value]="option.value">{{ option.label }}</option>
+      }
+    </select>
+  </label>
+  <label class="hidden-filter"
+    >Country<input
+      formControlName="country"
+      list="filter-country-options"
+      placeholder="Any country name" /><datalist id="filter-country-options">
+      @for (country of countryOptions; track country.value) {
+        <option [value]="country.value"></option>
+      }</datalist
+  ></label>
+  <label class="filter-quarter"
+    >Status<select formControlName="status">
+      <option value="">All statuses</option>
+      @for (status of statuses; track status) {
+        <option [value]="status">{{ label(status) }}</option>
+      }
+    </select></label
+  >
+  <label class="filter-third"
+    >Email status<select formControlName="emailStatus">
+      <option value="">All email statuses</option>
+      @for (status of emailStatuses; track status) {
+        <option [value]="status">{{ label(status) }}</option>
+      }
+    </select></label
+  >
+  <label class="filter-third"
+    >Source<select formControlName="source">
+      <option value="">All sources</option>
+      @for (source of sources; track source) {
+        <option [value]="source">{{ label(source) }}</option>
+      }
+    </select></label
+  >
+  <label class="filter-third"
+    >Assignee
+    @if (auth.hasPermission(permissions.settingsUsersView)) {
+      <select formControlName="assignedUserId">
+        <option value="">All assignees</option>
+        @for (user of assignees(); track user.id) {
+          <option [value]="user.id">{{ user.display_name }}</option>
+        }
+      </select>
+    } @else {
+      <input formControlName="assignedUserId" placeholder="User UUID" />
+    }
+  </label>
+</form>
+
+@if (notice()) {
+  <p class="lead-notice" role="status">{{ notice() }}</p>
+}
+@if (errorMessage() && !permissionDenied()) {
+  <p class="lead-alert" role="alert">{{ errorMessage() }}</p>
+}
+
+<section class="lead-panel" aria-label="Lead results">
+  @if (loading()) {
+    <div class="lead-state" role="status">Loading leads…</div>
+  } @else if (permissionDenied()) {
+    <div class="lead-state error">
+      <strong>Permission denied</strong>
+      <p>Your role cannot view leads in this workspace.</p>
+    </div>
+  } @else if (items().length === 0) {
+    <div class="lead-state">
+      <strong>No leads found</strong>
+      <p>Try changing the filters, or add a lead if you have permission.</p>
+    </div>
+  } @else {
+    <div class="table-note">
+      Column sorting applies to this loaded page. The current backend contract does not expose
+      server-side sorting.
+    </div>
+    <div class="lead-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th [attr.aria-sort]="ariaSort('tracking_id')">
+              <button type="button" (click)="sortBy('tracking_id')">Tracking ID</button>
+            </th>
+            <th [attr.aria-sort]="ariaSort('name')">
+              <button type="button" (click)="sortBy('name')">Full name</button>
+            </th>
+            <th [attr.aria-sort]="ariaSort('company')">
+              <button type="button" (click)="sortBy('company')">Company</button>
+            </th>
+            <th [attr.aria-sort]="ariaSort('email')">
+              <button type="button" (click)="sortBy('email')">Email</button>
+            </th>
+            <th [attr.aria-sort]="ariaSort('country')">
+              <button type="button" (click)="sortBy('country')">Country</button>
+            </th>
+            <th [attr.aria-sort]="ariaSort('status')">
+              <button type="button" (click)="sortBy('status')">Status</button>
+            </th>
+            <th [attr.aria-sort]="ariaSort('assignee')">
+              <button type="button" (click)="sortBy('assignee')">Assignee</button>
+            </th>
+            <th><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (lead of sortedItems(); track lead.id) {
+            <tr>
+              <td>
+                <a class="tracking-link" [routerLink]="['/leads', lead.id]">{{
+                  lead.tracking_id
+                }}</a>
+              </td>
+              <td>
+                <strong>{{ lead.first_name }} {{ lead.last_name }}</strong>
+              </td>
+              <td>
+                {{ lead.company || '—' }}
+                @if (lead.service_requested) {
+                  <small class="cell-secondary">Service: {{ lead.service_requested }}</small>
+                }
+              </td>
+              <td>{{ lead.email }}</td>
+              <td>{{ country(lead.country) }}</td>
+              <td>
+                <span class="lead-badge status-{{ lead.status }}">{{ label(lead.status) }}</span>
+              </td>
+              <td class="assignee-cell" [title]="assigneeName(lead.assigned_user_id)">
+                {{ assigneeName(lead.assigned_user_id) }}
+              </td>
+              <td>
+                <div class="row-actions">
+                  <a [routerLink]="['/leads', lead.id]">View</a>
+                  @if (auth.hasPermission(permissions.leadsUpdate)) {
+                    <a [routerLink]="['/leads', lead.id, 'edit']">Edit</a>
+                  }
+                  @if (auth.hasPermission(permissions.leadsDelete)) {
+                    <button type="button" (click)="archiveCandidate.set(lead)">Archive</button>
+                  }
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <div class="lead-pagination">
+      <span>Page {{ page() }} of {{ pageCount() }} · {{ total() }} leads</span>
+      <div>
+        <button type="button" [disabled]="page() <= 1" (click)="goToPage(page() - 1)">
+          Previous</button
+        ><button type="button" [disabled]="page() >= pageCount()" (click)="goToPage(page() + 1)">
+          Next
+        </button>
+      </div>
+    </div>
+  }
+</section>
+
+@if (archiveCandidate(); as lead) {
+  <div class="lead-modal-backdrop">
+    <section
+      class="lead-modal"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="archive-title"
+    >
+      <p class="eyebrow">Archive lead</p>
+      <h2 id="archive-title">Archive {{ lead.first_name }} {{ lead.last_name }}?</h2>
+      <p>
+        This removes the lead from active lists. The record and audit history are retained, and any
+        pending automatic customer actions stop.
+      </p>
+      <div class="lead-form-actions">
+        <button
+          class="secondary-button"
+          type="button"
+          [disabled]="mutating()"
+          (click)="archiveCandidate.set(null)"
+        >
+          Cancel</button
+        ><button class="danger-button" type="button" [disabled]="mutating()" (click)="archive()">
+          {{ mutating() ? 'Archiving…' : 'Archive lead' }}
+        </button>
+      </div>
+    </section>
+  </div>
+}

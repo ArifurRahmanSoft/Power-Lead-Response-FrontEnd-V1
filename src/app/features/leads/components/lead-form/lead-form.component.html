@@ -1,0 +1,415 @@
+@if (message()) {
+  <div class="lead-alert" role="alert">
+    <span>{{ message() }}</span>
+    @if (duplicate(); as existing) {
+      <a [routerLink]="['/leads', existing.id]">View existing lead {{ existing.tracking_id }}</a>
+    }
+    @if (stale()) {
+      <span>Reload this page to review the latest version before trying again.</span>
+    }
+  </div>
+}
+
+<form class="lead-form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
+  @if (canUseVoiceFill()) {
+    <app-lead-voice-input (applyDraft)="applyVoiceDraft($event)" />
+
+    @if (voiceConflicts().length) {
+      <section class="voice-apply-confirmation" aria-labelledby="voice-overwrite-title">
+        <div class="voice-confirmation-heading">
+          <span class="voice-confirmation-icon" aria-hidden="true">!</span>
+          <span>
+            <h2 id="voice-overwrite-title">Confirm changes to existing fields</h2>
+            <p>
+              The voice draft differs from values already entered. Nothing will change until you
+              choose an option.
+            </p>
+          </span>
+        </div>
+        <div class="voice-differences">
+          @for (conflict of voiceConflicts(); track conflict.field) {
+            <div>
+              <strong>{{ conflict.label }}</strong>
+              <span><small>Current</small>{{ conflict.current }}</span>
+              <span><small>Voice draft</small>{{ conflict.proposed }}</span>
+            </div>
+          }
+        </div>
+        <div class="voice-confirmation-actions">
+          <button class="secondary-button" type="button" (click)="cancelVoiceApply()">
+            Cancel
+          </button>
+          <button class="secondary-button" type="button" (click)="applyVoiceToBlankFields()">
+            Apply only to blank fields
+          </button>
+          <button class="primary-button" type="button" (click)="confirmVoiceOverwrite()">
+            Overwrite and apply
+          </button>
+        </div>
+      </section>
+    }
+
+    @if (voiceNotice()) {
+      <div class="lead-notice voice-notice" role="status">{{ voiceNotice() }}</div>
+    }
+  }
+
+  <fieldset class="lead-form-card">
+    <legend class="visually-hidden">Contact Information</legend>
+    <div class="lead-section-header">
+      <span class="lead-section-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <path d="M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z" />
+        </svg>
+      </span>
+      <span class="lead-section-heading">
+        <h2>Contact Information</h2>
+        <p>Core contact details. Required fields are marked with an asterisk.</p>
+      </span>
+    </div>
+    <div class="lead-section-body">
+      <div class="lead-form-grid">
+        <label
+          ><span>First Name <span class="required-indicator" aria-hidden="true">*</span></span
+          ><input
+            formControlName="firstName"
+            maxlength="120"
+            autocomplete="given-name"
+            required
+            aria-required="true"
+          />
+          @if (fieldError('firstName')) {
+            <small class="field-error">{{ fieldError('firstName') }}</small>
+          }
+        </label>
+        <label
+          ><span>Last Name <span class="required-indicator" aria-hidden="true">*</span></span
+          ><input
+            formControlName="lastName"
+            maxlength="120"
+            autocomplete="family-name"
+            required
+            aria-required="true"
+          />
+          @if (fieldError('lastName')) {
+            <small class="field-error">{{ fieldError('lastName') }}</small>
+          }
+        </label>
+        <label
+          ><span>Email <span class="required-indicator" aria-hidden="true">*</span></span
+          ><input
+            type="email"
+            formControlName="email"
+            autocomplete="email"
+            required
+            aria-required="true"
+          />
+          @if (fieldError('email')) {
+            <small class="field-error">{{ fieldError('email') }}</small>
+          }
+        </label>
+        <label
+          >Email Status<select formControlName="emailStatus">
+            @for (status of emailStatuses; track status) {
+              <option [value]="status">{{ label(status) }}</option>
+            }</select
+          ><small>Syntax alone does not verify an email address.</small></label
+        >
+        <label
+          >Phone<input formControlName="phone" maxlength="80" autocomplete="tel" />
+          @if (fieldError('phone')) {
+            <small class="field-error">{{ fieldError('phone') }}</small>
+          }
+        </label>
+        <label
+          >Designation<input
+            formControlName="designation"
+            maxlength="160"
+            autocomplete="organization-title"
+          />
+          @if (fieldError('designation')) {
+            <small class="field-error">{{ fieldError('designation') }}</small>
+          }
+        </label>
+        <label
+          >City<input formControlName="city" maxlength="120" autocomplete="address-level2"
+        /></label>
+        <label
+          >State / region<input
+            formControlName="state"
+            maxlength="120"
+            autocomplete="address-level1"
+        /></label>
+        <label class="full"
+          >Country<input
+            formControlName="country"
+            list="lead-country-options"
+            placeholder="Bangladesh"
+            autocomplete="country-name"
+          />
+          <datalist id="lead-country-options">
+            @for (country of countryOptions; track country.value) {
+              <option [value]="country.value"></option>
+            }
+          </datalist>
+          <small>Search and select a country name, for example Bangladesh.</small>
+          @if (fieldError('country')) {
+            <small class="field-error">{{ fieldError('country') }}</small>
+          }
+        </label>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset class="lead-form-card">
+    <legend class="visually-hidden">Company Information</legend>
+    <div class="lead-section-header">
+      <span class="lead-section-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <path d="M3 21h18M5 21V7l7-4v18M19 21V11l-7-4M8 9h1M8 13h1M8 17h1M15 13h1M15 17h1" />
+        </svg>
+      </span>
+      <span class="lead-section-heading">
+        <h2>Company Information</h2>
+        <p>Organization details, requested services, and revenue profile.</p>
+      </span>
+    </div>
+    <div class="lead-section-body">
+      <div class="lead-form-grid">
+        <label
+          >Company<input formControlName="company" maxlength="200" autocomplete="organization"
+        /></label>
+        <label>Industry<input formControlName="industry" maxlength="160" /></label>
+        <label class="full"
+          >Service Requested<input
+            formControlName="serviceRequested"
+            maxlength="200"
+            placeholder="Website Design, SEO, or Property Valuation"
+          />
+          @if (fieldError('serviceRequested')) {
+            <small class="field-error">{{ fieldError('serviceRequested') }}</small>
+          }
+        </label>
+        <label class="full"
+          >Company Website<input
+            type="text"
+            inputmode="url"
+            formControlName="companyWebsite"
+            placeholder="example.com"
+            autocomplete="url"
+          />
+          @if (fieldError('companyWebsite')) {
+            <small class="field-error">{{ fieldError('companyWebsite') }}</small>
+          }
+        </label>
+        <label
+          >Company Size<select formControlName="companySize">
+            <option value="">Not provided</option>
+            @for (size of companySizes; track size) {
+              <option [value]="size">{{ label(size) }}</option>
+            }
+          </select></label
+        >
+        <label
+          >Revenue Amount<input
+            inputmode="decimal"
+            formControlName="revenueAmount"
+            placeholder="100000.00"
+          />
+          @if (fieldError('revenueAmount')) {
+            <small class="field-error">{{ fieldError('revenueAmount') }}</small>
+          }
+        </label>
+        <label
+          >Revenue Currency<input
+            formControlName="revenueCurrency"
+            list="lead-currency-options"
+            maxlength="3"
+            placeholder="USD"
+          />
+          <datalist id="lead-currency-options">
+            @for (currency of currencyOptions; track currency.value) {
+              <option [value]="currency.value"></option>
+            }
+          </datalist>
+          @if (fieldError('revenueCurrency')) {
+            <small class="field-error">{{ fieldError('revenueCurrency') }}</small>
+          }
+        </label>
+        <label
+          >Revenue Period<select formControlName="revenuePeriod">
+            <option value="">Not provided</option>
+            @for (period of revenuePeriods; track period) {
+              <option [value]="period">{{ label(period) }}</option>
+            }
+          </select></label
+        >
+        @if (form.hasError('revenueIncomplete') && (form.dirty || form.touched)) {
+          <p class="field-error full" role="alert">
+            Revenue amount, currency, and period must be provided together.
+          </p>
+        }
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset class="lead-form-card">
+    <legend class="visually-hidden">Social Links</legend>
+    <div class="lead-section-header">
+      <span class="lead-section-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <path
+            d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"
+          />
+        </svg>
+      </span>
+      <span class="lead-section-heading">
+        <h2>Social Links</h2>
+        <p>Add full profile URLs or domains so they are easy to review later.</p>
+      </span>
+    </div>
+    <div class="lead-section-body">
+      <div class="lead-form-grid url-fields">
+        <label
+          >LinkedIn URL<input
+            type="text"
+            inputmode="url"
+            formControlName="linkedinUrl"
+            placeholder="linkedin.com/in/..."
+          />
+          @if (fieldError('linkedinUrl')) {
+            <small class="field-error">{{ fieldError('linkedinUrl') }}</small>
+          }
+        </label>
+        <label
+          >Facebook URL<input
+            type="text"
+            inputmode="url"
+            formControlName="facebookUrl"
+            placeholder="facebook.com/..."
+          />
+          @if (fieldError('facebookUrl')) {
+            <small class="field-error">{{ fieldError('facebookUrl') }}</small>
+          }
+        </label>
+        <label
+          >Instagram URL<input
+            type="text"
+            inputmode="url"
+            formControlName="instagramUrl"
+            placeholder="instagram.com/..."
+          />
+          @if (fieldError('instagramUrl')) {
+            <small class="field-error">{{ fieldError('instagramUrl') }}</small>
+          }
+        </label>
+        <label
+          >X URL<input type="text" inputmode="url" formControlName="xUrl" placeholder="x.com/..." />
+          @if (fieldError('xUrl')) {
+            <small class="field-error">{{ fieldError('xUrl') }}</small>
+          }
+        </label>
+        <label class="full"
+          >GitHub URL<input
+            type="text"
+            inputmode="url"
+            formControlName="githubUrl"
+            placeholder="github.com/..."
+          />
+          @if (fieldError('githubUrl')) {
+            <small class="field-error">{{ fieldError('githubUrl') }}</small>
+          }
+        </label>
+      </div>
+    </div>
+  </fieldset>
+
+  <fieldset class="lead-form-card">
+    <legend class="visually-hidden">Internal Handling</legend>
+    <div class="lead-section-header">
+      <span class="lead-section-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10ZM9 12l2 2 4-4" />
+        </svg>
+      </span>
+      <span class="lead-section-heading">
+        <h2>Internal Handling</h2>
+        <p>Assignment, consent records, and notes for your team.</p>
+      </span>
+    </div>
+    <div class="lead-section-body">
+      <div class="lead-form-grid">
+        @if (canAssign()) {
+          <label class="full"
+            >Assignee
+            @if (canChooseAssignee()) {
+              <select formControlName="assignedUserId" [disabled]="loadingAssignees()">
+                <option value="">Unassigned</option>
+                @for (user of assignees(); track user.id) {
+                  <option [value]="user.id">{{ user.display_name }} — {{ user.email }}</option>
+                }
+              </select>
+            } @else {
+              <input
+                formControlName="assignedUserId"
+                placeholder="User UUID (leave blank for unassigned)"
+              />
+              <small
+                >Your role can assign leads but cannot load the protected workspace-user catalog.
+                Enter an active workspace user ID.</small
+              >
+              @if (fieldError('assignedUserId')) {
+                <small class="field-error">{{ fieldError('assignedUserId') }}</small>
+              }
+            }
+          </label>
+        }
+        <label
+          >Consent Status<select formControlName="consentStatus">
+            @for (status of consentStatuses; track status) {
+              <option [value]="status">{{ label(status) }}</option>
+            }</select
+          ><small>Consent defaults to Unknown and is never inferred.</small></label
+        >
+        <label>Consent Reference<input formControlName="consentReference" maxlength="255" /></label>
+        <label class="full"
+          >Consent Evidence<textarea
+            formControlName="consentEvidence"
+            rows="3"
+            maxlength="4000"
+          ></textarea>
+        </label>
+        @if (form.hasError('consentProofRequired') && (form.dirty || form.touched)) {
+          <p class="field-error full" role="alert">
+            Granted consent requires evidence or a reference.
+          </p>
+        }
+        <label class="full"
+          >Notes<textarea formControlName="notes" rows="5" maxlength="10000"></textarea>
+        </label>
+      </div>
+    </div>
+  </fieldset>
+
+  @if (!canSaveLead()) {
+    <p class="save-permission-note" id="lead-save-permission-note" role="note">
+      <span aria-hidden="true">i</span>
+      {{ savePermissionMessage() }} Your entries remain on this page unless you cancel or navigate
+      away.
+    </p>
+  }
+
+  <div class="lead-form-actions">
+    <button class="secondary-button" type="button" [disabled]="saving()" (click)="cancelled.emit()">
+      Cancel
+    </button>
+    <button
+      class="primary-button"
+      type="submit"
+      [disabled]="saving() || !canSaveLead()"
+      [attr.aria-describedby]="!canSaveLead() ? 'lead-save-permission-note' : null"
+    >
+      {{ saving() ? 'Saving…' : lead() ? 'Save changes' : 'Create lead' }}
+    </button>
+  </div>
+</form>

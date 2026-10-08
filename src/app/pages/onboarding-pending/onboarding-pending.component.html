@@ -1,0 +1,12 @@
+<main class="pending-page">
+  <section class="pending-card" aria-labelledby="pending-heading">
+    <span class="status-icon" aria-hidden="true">…</span>
+    <p class="eyebrow">Onboarding pending</p>
+    <h1 id="pending-heading">Your account is ready</h1>
+    <p>
+      Hi {{ auth.user()?.name }}. You do not have an active workspace membership yet. Ask a
+      workspace owner to add you, then sign in again.
+    </p>
+    <button type="button" (click)="logout()">Sign out</button>
+  </section>
+</main>

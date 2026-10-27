@@ -1,0 +1,164 @@
+@if (conversation) {
+  <section class="chat-panel" aria-label="WhatsApp conversation with {{ displayName() }}">
+    <header class="chat-header">
+      <button
+        class="back-button"
+        type="button"
+        aria-label="Back to conversations"
+        (click)="back.emit()"
+      >
+        <span aria-hidden="true">←</span>
+      </button>
+      <span class="header-avatar" aria-hidden="true">{{
+        displayName().charAt(0).toUpperCase()
+      }}</span>
+      <div class="contact-heading">
+        <strong>{{ displayName() }}</strong
+        ><span>{{ displayAddress(conversation.external_address) }}</span>
+        <small>
+          {{
+            channel?.label || (provider === 'meta' ? 'Meta WhatsApp' : 'Existing Twilio WhatsApp')
+          }}
+          @if (channel?.senderAddress) {
+            · Sender {{ channel?.senderAddress }}
+          }
+        </small>
+      </div>
+      <div class="linked-record">
+        @if (conversation.customer_id) {
+          <a [routerLink]="['/customers', conversation.customer_id]">{{ linkedLabel() }}</a>
+        } @else if (conversation.lead_id) {
+          <a [routerLink]="['/leads', conversation.lead_id]">{{ linkedLabel() }}</a>
+        } @else {
+          <span>{{ linkedLabel() }}</span>
+        }
+        @if (canSend) {
+          <button type="button" (click)="linkRequested.emit()">
+            {{ conversation.lead_id || conversation.customer_id ? 'Change' : 'Link record' }}
+          </button>
+        }
+      </div>
+      <div class="service-window" [class.closed]="!conversation.free_form_reply_allowed">
+        <span class="window-dot" aria-hidden="true"></span>
+        @if (conversation.free_form_reply_allowed) {
+          <span
+            >Service window open
+            @if (conversation.service_window_expires_at) {
+              until
+              <time [attr.datetime]="conversation.service_window_expires_at">{{
+                conversation.service_window_expires_at | date: 'short'
+              }}</time>
+            }
+          </span>
+        } @else if (provider === 'meta' && conversation.eligibility?.approved_template_required) {
+          <span>Service window closed · approved Meta template required</span>
+        } @else {
+          <span>Service window closed</span>
+        }
+      </div>
+    </header>
+
+    <div #messageScroller class="message-scroller" (scroll)="onScroll()">
+      @if (loading && !messages.length) {
+        <div class="chat-state" role="status"><strong>Loading message history...</strong></div>
+      } @else if (errorMessage && !messages.length) {
+        <div class="chat-state error-state" role="alert">
+          <strong>Message history is unavailable</strong>
+          <p>{{ errorMessage }}</p>
+          <button type="button" (click)="retry.emit()">Try again</button>
+        </div>
+      } @else {
+        @if (hasOlder) {
+          <button
+            class="older-button"
+            type="button"
+            [disabled]="loadingOlder"
+            (click)="requestOlder()"
+          >
+            {{ loadingOlder ? 'Loading older messages...' : 'Load older messages' }}
+          </button>
+        }
+        @if (!messages.length) {
+          <div class="chat-state">
+            <strong>No messages yet</strong>
+            <p>This conversation does not have any stored messages.</p>
+          </div>
+        } @else {
+          <ol class="message-list" aria-live="polite">
+            @for (message of messages; track message.id) {
+              <li class="message-row" [class.outgoing]="message.direction === 'outbound'">
+                <article
+                  class="message-bubble"
+                  [class.failed]="message.status === 'failed' || message.status === 'undelivered'"
+                >
+                  <p>{{ message.body }}</p>
+                  @for (media of message.media; track $index) {
+                    <p class="media-placeholder">
+                      <span aria-hidden="true">▧</span> Unsupported WhatsApp media{{
+                        media.content_type ? ' (' + media.content_type + ')' : ''
+                      }}
+                    </p>
+                  }
+                  <footer>
+                    <time [attr.datetime]="message.occurred_at">{{
+                      message.occurred_at | date: 'short'
+                    }}</time>
+                    @if (message.direction === 'outbound') {
+                      <span class="message-status" [attr.data-status]="message.status">{{
+                        statusLabel(message.status)
+                      }}</span>
+                    }
+                  </footer>
+                  @if (
+                    (message.status === 'failed' || message.status === 'undelivered') &&
+                    message.failure_reason
+                  ) {
+                    <p class="failure-reason">{{ message.failure_reason }}</p>
+                  }
+                </article>
+              </li>
+            }
+          </ol>
+        }
+      }
+      @if (newMessageCount > 0) {
+        <button class="new-message-button" type="button" (click)="scrollToLatest()">
+          {{ newMessageCount }} new {{ newMessageCount === 1 ? 'message' : 'messages' }} ↓
+        </button>
+      }
+    </div>
+
+    <app-whatsapp-reply-composer
+      [draft]="draft"
+      [canSend]="canSend"
+      [serviceWindowOpen]="conversation.free_form_reply_allowed"
+      [provider]="provider"
+      [eligibility]="conversation.eligibility || null"
+      [templates]="templates"
+      [templatesLoading]="templatesLoading"
+      [templatesError]="templatesError"
+      [templateName]="templateName"
+      [templateLanguage]="templateLanguage"
+      [templateVariables]="templateVariables"
+      [purpose]="purpose"
+      [sending]="sending"
+      [checkingResult]="checkingResult"
+      [uncertain]="uncertain"
+      [errorMessage]="composerError"
+      [notice]="composerNotice"
+      (draftChange)="draftChange.emit($event)"
+      (send)="send.emit()"
+      (checkResult)="checkResult.emit()"
+      (templateNameChange)="templateNameChange.emit($event)"
+      (templateLanguageChange)="templateLanguageChange.emit($event)"
+      (templateVariableChange)="templateVariableChange.emit($event)"
+      (purposeChange)="purposeChange.emit($event)"
+      (retryTemplates)="retryTemplates.emit()"
+    />
+  </section>
+} @else {
+  <section class="no-selection" aria-label="No WhatsApp conversation selected">
+    <span aria-hidden="true">✦</span><strong>Select a conversation</strong>
+    <p>Choose a WhatsApp conversation from the list to read and reply.</p>
+  </section>
+}

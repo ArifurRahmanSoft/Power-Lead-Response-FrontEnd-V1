@@ -1,0 +1,225 @@
+@if (errorMessage()) {
+  <p class="alert" role="alert">{{ errorMessage() }}</p>
+}
+@if (notice()) {
+  <p class="notice" role="status">{{ notice() }}</p>
+}
+
+<section class="message-toolbar" aria-label="Message template filters" [formGroup]="filters">
+  <label>
+    <span>Search</span>
+    <input type="search" formControlName="search" placeholder="Name or body text" />
+  </label>
+  <label class="checkbox">
+    <input type="checkbox" formControlName="includeArchived" />
+    <span>Include archived</span>
+  </label>
+  <button class="text-button" type="button" (click)="clearFilters()">Clear filters</button>
+</section>
+
+<section class="message-panel">
+  @if (loading()) {
+    <div class="state-box" role="status">Loading message templates…</div>
+  } @else if (!items().length) {
+    <div class="empty-state">
+      <h2>No message templates found</h2>
+      <p>Create a plain-text template or adjust the search.</p>
+      @if (auth.hasPermission(permissions.mailTemplatesManage)) {
+        <button class="primary-button" type="button" (click)="openCreate()">
+          New Message Template
+        </button>
+      }
+    </div>
+  } @else {
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Body</th>
+            <th>Updated</th>
+            <th><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (item of items(); track item.id) {
+            <tr [class.archived]="item.archived">
+              <td data-label="Name">
+                <strong>{{ item.name }}</strong>
+                @if (item.archived) {
+                  <span class="archived-label">Archived</span>
+                }
+              </td>
+              <td class="body-snippet" data-label="Body">{{ bodySnippet(item.body) }}</td>
+              <td data-label="Updated">
+                <time [attr.datetime]="item.updated_at">{{
+                  item.updated_at | date: 'medium'
+                }}</time>
+              </td>
+              <td data-label="Actions">
+                <div class="actions">
+                  <button type="button" (click)="openView(item)">View</button>
+                  @if (auth.hasPermission(permissions.mailTemplatesManage) && !item.archived) {
+                    <button type="button" (click)="openEdit(item)">Edit</button>
+                    <button
+                      class="danger"
+                      type="button"
+                      [disabled]="busyId() === item.id"
+                      (click)="archive(item)"
+                    >
+                      Archive
+                    </button>
+                  }
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <nav class="pagination" aria-label="Message template pages">
+      <button type="button" [disabled]="page() === 1" (click)="goToPage(page() - 1)">
+        Previous
+      </button>
+      <span>Page {{ page() }} of {{ pageCount() }} · {{ total() }} templates</span>
+      <button type="button" [disabled]="page() === pageCount()" (click)="goToPage(page() + 1)">
+        Next
+      </button>
+    </nav>
+  }
+</section>
+
+@if (editorMode(); as mode) {
+  <div class="modal-backdrop">
+    <section
+      class="message-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="message-editor-title"
+    >
+      <header>
+        <div>
+          <p class="eyebrow">Message Templates</p>
+          <h2 id="message-editor-title">
+            {{
+              mode === 'create'
+                ? 'New Message Template'
+                : mode === 'edit'
+                  ? 'Edit Message Template'
+                  : 'Message Template'
+            }}
+          </h2>
+        </div>
+        <button
+          class="close-button"
+          type="button"
+          aria-label="Close message template"
+          (click)="closeEditor()"
+        >
+          ×
+        </button>
+      </header>
+
+      <form [formGroup]="editorForm" (ngSubmit)="save()">
+        <label>
+          <span>Template Name</span>
+          <input #nameInput type="text" formControlName="name" [attr.maxlength]="limits.name" />
+          <small>{{ nameCharacterCount() }} / {{ limits.name }}</small>
+          @if (fieldError('name'); as error) {
+            <small class="field-error">{{ error }}</small>
+          }
+        </label>
+
+        <div class="body-heading">
+          <label for="message-template-body">Message Body</label>
+          @if (mode !== 'view') {
+            <label class="variable-control">
+              <span>Insert Variable</span>
+              <select
+                [formControl]="variableSelection"
+                [attr.disabled]="placeholdersError() ? true : null"
+                (change)="insertVariable()"
+              >
+                <option value="">Choose a variable</option>
+                @for (variable of placeholders(); track variable.key) {
+                  <option [value]="variable.key">
+                    {{ variable.label }} — {{ '{{' + variable.key + '}}' }}
+                  </option>
+                }
+              </select>
+            </label>
+          }
+        </div>
+        @if (placeholdersError()) {
+          <p class="field-error" role="alert">{{ placeholdersError() }}</p>
+        }
+        <textarea
+          #bodyInput
+          id="message-template-body"
+          formControlName="body"
+          rows="12"
+          [attr.maxlength]="limits.body"
+          spellcheck="true"
+        ></textarea>
+        <div class="body-meta">
+          <small>Plain text only. Line breaks and Unicode are preserved.</small>
+          <small
+            >{{ bodyCharacterCount().toLocaleString() }} / {{ limits.body.toLocaleString() }}</small
+          >
+        </div>
+        @if (fieldError('body'); as error) {
+          <small class="field-error">{{ error }}</small>
+        }
+        @if (unknownVariables().length) {
+          <p class="field-error" role="alert">
+            Unknown variable{{ unknownVariables().length === 1 ? '' : 's' }}:
+            {{ unknownVariables().join(', ') }}
+          </p>
+        }
+
+        @if (selected()) {
+          <section class="preview-section">
+            <div>
+              <strong>Plain-text preview</strong>
+              @if (editorForm.dirty) {
+                <small>Save changes before previewing the backend-rendered version.</small>
+              }
+            </div>
+            <button
+              class="secondary-button"
+              type="button"
+              [disabled]="editorForm.dirty || previewing()"
+              (click)="loadPreview()"
+            >
+              {{ previewing() ? 'Rendering…' : 'Preview' }}
+            </button>
+            @if (preview(); as rendered) {
+              <pre>{{ rendered.rendered_body }}</pre>
+              @for (issue of rendered.missing_values; track issue.placeholder) {
+                <small class="preview-warning">{{ issue.placeholder }}: {{ issue.message }}</small>
+              }
+              @for (warning of rendered.warnings; track warning) {
+                <small class="preview-warning">{{ warning }}</small>
+              }
+            }
+          </section>
+        }
+
+        <footer>
+          <button class="secondary-button" type="button" (click)="closeEditor()">
+            {{ mode === 'view' ? 'Close' : 'Cancel' }}
+          </button>
+          @if (mode !== 'view') {
+            <button
+              class="primary-button"
+              type="submit"
+              [disabled]="saving() || editorForm.invalid || unknownVariables().length"
+            >
+              {{ saving() ? 'Saving…' : 'Save Message Template' }}
+            </button>
+          }
+        </footer>
+      </form>
+    </section>
+  </div>
+}

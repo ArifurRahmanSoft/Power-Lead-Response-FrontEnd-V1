@@ -1,0 +1,406 @@
+<section class="task-manager" aria-label="Tasks">
+  <form class="task-filters" [formGroup]="filters" (ngSubmit)="applyFilters()">
+    <label>
+      Status
+      <select formControlName="status">
+        <option value="">All statuses</option>
+        @for (status of statuses; track status) {
+          <option [value]="status">{{ label(status) }}</option>
+        }
+        <option value="completed">Completed</option>
+        <option value="cancelled">Cancelled</option>
+      </select>
+    </label>
+    <label>
+      Type
+      <select formControlName="taskType">
+        <option value="">All types</option>
+        @for (type of taskTypes(); track type) {
+          <option [value]="type">{{ label(type) }}</option>
+        }
+      </select>
+    </label>
+    <label>
+      Priority
+      <select formControlName="priority">
+        <option value="">All priorities</option>
+        @for (priority of priorities; track priority) {
+          <option [value]="priority">{{ label(priority) }}</option>
+        }
+      </select>
+    </label>
+    <div class="task-filter-actions">
+      <button class="secondary-button" type="button" (click)="clearFilters()">Reset</button>
+      <button class="primary-button" type="submit">Apply</button>
+    </div>
+  </form>
+
+  @if (notice()) {
+    <p class="lead-notice" role="status">{{ notice() }}</p>
+  }
+  @if (errorMessage()) {
+    <p class="lead-alert" role="alert">{{ errorMessage() }}</p>
+  }
+
+  <div class="task-list-shell">
+    @if (loading()) {
+      <div class="task-state" role="status">Loading tasks…</div>
+    } @else if (!tasks().length) {
+      <div class="task-state">
+        <strong>No tasks found</strong>
+        <p>There are no tasks matching this view and its filters.</p>
+      </div>
+    } @else {
+      <div class="task-list">
+        @for (task of tasks(); track task.id) {
+          <article class="task-row" [class.task-overdue]="isOverdue(task)">
+            <div class="task-main">
+              <div class="task-title-row">
+                <div>
+                  <span class="task-type">{{ label(task.task_type) }}</span>
+                  <h3>{{ task.title }}</h3>
+                </div>
+                <div class="task-badges">
+                  @if (isOverdue(task)) {
+                    <span class="overdue-badge">Overdue</span>
+                  }
+                  <span class="priority-badge priority-{{ task.priority }}">
+                    {{ label(task.priority) }}
+                  </span>
+                  <span class="task-status status-{{ task.status }}">{{ label(task.status) }}</span>
+                </div>
+              </div>
+              @if (task.notes) {
+                <p class="task-notes">{{ task.notes }}</p>
+              }
+              <dl class="task-meta">
+                <div>
+                  <dt>Due</dt>
+                  <dd>{{ task.due_at | date: 'medium' }}</dd>
+                </div>
+                <div>
+                  <dt>Assignee</dt>
+                  <dd>{{ assigneeName(task.assigned_user_id) }}</dd>
+                </div>
+                @if (!leadId()) {
+                  <div>
+                    <dt>Lead</dt>
+                    <dd><a [routerLink]="['/leads', task.lead_id]">Open lead</a></dd>
+                  </div>
+                }
+              </dl>
+            </div>
+            @if (canEditTask(task) && !isTerminal(task)) {
+              <div class="task-actions">
+                <button
+                  class="primary-button"
+                  type="button"
+                  [disabled]="saving()"
+                  (click)="openComplete(task)"
+                >
+                  Complete
+                </button>
+                <button
+                  class="secondary-button"
+                  type="button"
+                  [disabled]="saving()"
+                  (click)="openEdit(task)"
+                >
+                  Edit
+                </button>
+                <button
+                  class="task-cancel-button"
+                  type="button"
+                  [disabled]="saving()"
+                  (click)="cancelCandidate.set(task)"
+                >
+                  Cancel
+                </button>
+              </div>
+            }
+          </article>
+        }
+      </div>
+      <nav class="lead-pagination task-pagination" aria-label="Task pages">
+        <span>Page {{ page() }} of {{ pageCount() }} · {{ total() }} tasks</span>
+        <div>
+          <button type="button" [disabled]="page() <= 1 || loading()" (click)="load(page() - 1)">
+            Previous
+          </button>
+          <button
+            type="button"
+            [disabled]="page() >= pageCount() || loading()"
+            (click)="load(page() + 1)"
+          >
+            Next
+          </button>
+        </div>
+      </nav>
+    }
+  </div>
+</section>
+
+@if (editorOpen()) {
+  <div class="lead-modal-backdrop">
+    <section
+      class="lead-modal task-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="task-editor-title"
+    >
+      <p class="eyebrow">{{ editorTask() ? 'Update task' : 'Lead follow-up' }}</p>
+      <h2 id="task-editor-title">{{ editorTask() ? 'Edit task' : 'Create follow-up' }}</h2>
+      @if (errorMessage()) {
+        <p class="lead-alert" role="alert">{{ errorMessage() }}</p>
+      }
+      <form class="task-editor" [formGroup]="taskForm" (ngSubmit)="saveTask()">
+        <div class="task-form-grid">
+          <label>
+            Type
+            <select formControlName="taskType">
+              @for (type of taskTypes(); track type) {
+                <option [value]="type">{{ label(type) }}</option>
+              }
+            </select>
+          </label>
+          <label>
+            Priority
+            <select formControlName="priority">
+              @for (priority of priorities; track priority) {
+                <option [value]="priority">{{ label(priority) }}</option>
+              }
+            </select>
+          </label>
+          <label class="full">
+            Title
+            <input type="text" formControlName="title" maxlength="200" />
+            @if (fieldError('title'); as error) {
+              <small class="field-error">{{ error }}</small>
+            }
+          </label>
+          <label>
+            Due date and time
+            <input type="datetime-local" formControlName="dueAt" />
+            <small class="task-help">{{ timezone }}</small>
+            @if (fieldError('due_at'); as error) {
+              <small class="field-error">{{ error }}</small>
+            }
+          </label>
+          @if (editorTask()) {
+            <label>
+              Status
+              <select formControlName="status">
+                @for (status of statuses; track status) {
+                  <option [value]="status">{{ label(status) }}</option>
+                }
+              </select>
+            </label>
+          }
+          <label [class.full]="!editorTask()">
+            Assignee
+            @if (canChooseAssignee()) {
+              <select formControlName="assignedUserId">
+                @if (auth.user(); as currentUser) {
+                  <option [value]="currentUser.id">{{ currentUser.name }} (you)</option>
+                }
+                @for (user of users(); track user.id) {
+                  @if (user.id !== auth.user()?.id) {
+                    <option [value]="user.id">{{ user.display_name }}</option>
+                  }
+                }
+              </select>
+            } @else if (canAssign()) {
+              <input formControlName="assignedUserId" placeholder="Active workspace user UUID" />
+              <small class="task-help">
+                Your role can assign tasks but cannot load the protected user catalog.
+              </small>
+            } @else {
+              <span class="task-readonly">{{
+                assigneeName(taskForm.controls.assignedUserId.value)
+              }}</span>
+            }
+            @if (fieldError('assigned_user_id'); as error) {
+              <small class="field-error">{{ error }}</small>
+            }
+          </label>
+          <label class="full">
+            Notes
+            <textarea formControlName="notes" maxlength="10000" rows="4"></textarea>
+            @if (fieldError('notes'); as error) {
+              <small class="field-error">{{ error }}</small>
+            }
+          </label>
+        </div>
+        <div class="lead-form-actions task-modal-actions">
+          <button
+            class="secondary-button"
+            type="button"
+            [disabled]="saving()"
+            (click)="closeEditor()"
+          >
+            Cancel
+          </button>
+          <button class="primary-button" type="submit" [disabled]="saving()">
+            {{ saving() ? 'Saving…' : editorTask() ? 'Save changes' : 'Create follow-up' }}
+          </button>
+        </div>
+      </form>
+    </section>
+  </div>
+}
+
+@if (completionTask(); as task) {
+  <div class="lead-modal-backdrop">
+    <section
+      class="lead-modal task-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="task-complete-title"
+    >
+      <p class="eyebrow">Complete task</p>
+      <h2 id="task-complete-title">{{ task.title }}</h2>
+      @if (errorMessage()) {
+        <p class="lead-alert" role="alert">{{ errorMessage() }}</p>
+      }
+      @if (isContactTask(task)) {
+        <form class="task-editor" [formGroup]="completionForm" (ngSubmit)="completeTask()">
+          <fieldset class="completion-choice">
+            <legend>Contact record</legend>
+            <label
+              ><input type="radio" formControlName="mode" value="existing" /> Link an existing
+              activity</label
+            >
+            <label><input type="radio" formControlName="mode" value="log" /> Log contact now</label>
+          </fieldset>
+          @if (completionForm.controls.mode.value === 'existing') {
+            <label class="completion-field">
+              Contact activity
+              <select formControlName="activityId" [attr.aria-busy]="activitiesLoading()">
+                <option value="">
+                  {{ activitiesLoading() ? 'Loading activities…' : 'Select activity' }}
+                </option>
+                @for (activity of activities(); track activity.id) {
+                  <option [value]="activity.id">
+                    {{ label(activity.activity_type) }} · {{ activity.occurred_at | date: 'short' }}
+                  </option>
+                }
+              </select>
+              @if (fieldError('related_activity_id'); as error) {
+                <small class="field-error">{{ error }}</small>
+              }
+            </label>
+          } @else {
+            <p class="task-contact-notice">
+              This records contact and completes the task atomically. It does not send a message.
+            </p>
+            <div class="task-form-grid">
+              <label>
+                Contact type
+                <select formControlName="activityType">
+                  @for (type of contactActivityTypes; track type) {
+                    <option [value]="type">{{ label(type) }}</option>
+                  }
+                </select>
+              </label>
+              <label>
+                Channel
+                <select formControlName="channel">
+                  @for (channel of activityChannels; track channel) {
+                    <option [value]="channel">{{ label(channel) }}</option>
+                  }
+                </select>
+              </label>
+              <label>
+                Direction
+                <select formControlName="direction">
+                  <option value="outbound">Outbound</option>
+                  <option value="inbound">Inbound</option>
+                  <option value="internal">Internal</option>
+                </select>
+              </label>
+              <label>
+                Occurred at
+                <input type="datetime-local" formControlName="occurredAt" />
+                <small class="task-help">{{ timezone }}</small>
+                @if (fieldError('occurred_at'); as error) {
+                  <small class="field-error">{{ error }}</small>
+                }
+              </label>
+              <label class="full"
+                >Outcome<input type="text" formControlName="outcome" maxlength="500"
+              /></label>
+              <label class="full"
+                >Notes<textarea formControlName="notes" rows="3" maxlength="10000"></textarea>
+              </label>
+            </div>
+          }
+          <div class="lead-form-actions task-modal-actions">
+            <button
+              class="secondary-button"
+              type="button"
+              [disabled]="saving()"
+              (click)="closeCompletion()"
+            >
+              Back
+            </button>
+            <button
+              class="primary-button"
+              type="submit"
+              [disabled]="saving() || activitiesLoading()"
+            >
+              {{ saving() ? 'Completing…' : 'Complete task' }}
+            </button>
+          </div>
+        </form>
+      } @else {
+        <p>Mark this task as completed? This action records who completed it and when.</p>
+        <div class="lead-form-actions task-modal-actions">
+          <button
+            class="secondary-button"
+            type="button"
+            [disabled]="saving()"
+            (click)="closeCompletion()"
+          >
+            Back
+          </button>
+          <button
+            class="primary-button"
+            type="button"
+            [disabled]="saving()"
+            (click)="completeTask()"
+          >
+            {{ saving() ? 'Completing…' : 'Complete task' }}
+          </button>
+        </div>
+      }
+    </section>
+  </div>
+}
+
+@if (cancelCandidate(); as task) {
+  <div class="lead-modal-backdrop">
+    <section
+      class="lead-modal"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="task-cancel-title"
+    >
+      <p class="eyebrow">Cancel task</p>
+      <h2 id="task-cancel-title">Cancel “{{ task.title }}”?</h2>
+      <p>The task remains in history with its cancellation audit details.</p>
+      <div class="lead-form-actions task-modal-actions">
+        <button
+          class="secondary-button"
+          type="button"
+          [disabled]="saving()"
+          (click)="cancelCandidate.set(null)"
+        >
+          Back
+        </button>
+        <button class="danger-button" type="button" [disabled]="saving()" (click)="cancelTask()">
+          {{ saving() ? 'Cancelling…' : 'Cancel task' }}
+        </button>
+      </div>
+    </section>
+  </div>
+}

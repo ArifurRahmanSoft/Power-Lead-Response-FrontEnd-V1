@@ -14,7 +14,22 @@ const PUBLIC_AUTH_PATHS = new Set([
   '/auth/reset-password',
 ]);
 
-const LOCALLY_HANDLED_FORBIDDEN_PATHS = new Set(['/auth/me', '/auth/select-workspace']);
+const LOCALLY_HANDLED_FORBIDDEN_PATHS = new Set([
+  '/auth/me',
+  '/auth/select-workspace',
+  '/mail/messages',
+  '/sms/send',
+  '/sms/operations/recover',
+]);
+
+function isLocallyHandledForbiddenPath(path: string): boolean {
+  return (
+    LOCALLY_HANDLED_FORBIDDEN_PATHS.has(path) ||
+    path.startsWith('/messages/whatsapp') ||
+    path.startsWith('/sms/batches/') ||
+    path.startsWith('/sms/messages/')
+  );
+}
 
 function backendPath(requestUrl: string): string | null {
   try {
@@ -54,7 +69,7 @@ export const authInterceptor: HttpInterceptorFn = (request, next) => {
         });
       } else if (
         error.status === 403 &&
-        !LOCALLY_HANDLED_FORBIDDEN_PATHS.has(path) &&
+        !isLocallyHandledForbiddenPath(path) &&
         !(path.startsWith('/settings/') && request.method !== 'GET')
       ) {
         void router.navigate(['/access-denied']);

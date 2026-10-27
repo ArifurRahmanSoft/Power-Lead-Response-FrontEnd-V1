@@ -42,6 +42,8 @@ import {
   Lead,
   LeadCreateRequest,
   LeadFieldsDto,
+  LeadUpdateFields,
+  PendingTaskDisposition,
   REVENUE_PERIODS,
   RevenuePeriod,
 } from '../../models/lead.models';
@@ -143,6 +145,10 @@ export class LeadFormComponent implements OnChanges {
   protected readonly saving = signal(false);
   protected readonly loadingAssignees = signal(false);
   protected readonly assignees = signal<SettingsUser[]>([]);
+  protected readonly assigneeOptionsLoaded = signal(false);
+  protected readonly assigneeLoadError = signal('');
+  protected readonly originalAssigneeId = signal<string | null>(null);
+  protected readonly serverFieldErrors = signal<Record<string, string>>({});
   protected readonly message = signal('');
   protected readonly duplicate = signal<{ id: string; tracking_id: string } | null>(null);
   protected readonly stale = signal(false);
@@ -231,6 +237,13 @@ export class LeadFormComponent implements OnChanges {
           ),
         ],
       }),
+      assignmentReason: new FormControl('', {
+        nonNullable: true,
+        validators: [Validators.maxLength(1000)],
+      }),
+      pendingTaskDisposition: new FormControl<PendingTaskDisposition>('transfer', {
+        nonNullable: true,
+      }),
       consentStatus: new FormControl<ConsentStatus>('unknown', { nonNullable: true }),
       consentEvidence: new FormControl('', {
         nonNullable: true,
@@ -245,6 +258,12 @@ export class LeadFormComponent implements OnChanges {
   );
 
   constructor() {
+    this.form.valueChanges
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.serverFieldErrors.set({}));
+    this.form.controls.assignedUserId.valueChanges
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.syncAssignmentValidators());
     if (
       this.auth.hasPermission(PERMISSIONS.leadsAssign) &&
       this.auth.hasPermission(PERMISSIONS.settingsUsersView)
@@ -259,20 +278,35 @@ export class LeadFormComponent implements OnChanges {
 
   protected submit(): void {
     if (this.saving()) return;
+    this.serverFieldErrors.set({});
     if (!this.canSaveLead()) {
       this.message.set(this.savePermissionMessage());
       return;
     }
+    this.syncAssignmentValidators();
     if (this.form.invalid) {
       this.form.markAllAsTouched();
       this.message.set('Review the highlighted fields before saving.');
       return;
     }
     const existing = this.lead();
-    const fields = this.toDto();
-    const operation = existing
-      ? this.leads.update(existing.id, { ...fields, row_version: existing.row_version })
-      : this.leads.create(fields);
+    const fields = this.toDto(!existing);
+    let operation;
+    if (existing) {
+      const changes: LeadUpdateFields = { ...fields };
+      if (this.canAssign() && this.assignmentChanged()) {
+        const value = this.form.getRawValue();
+        changes.assigned_user_id = this.selectedAssigneeId();
+        changes.assignment_reason = value.assignmentReason.trim();
+        changes.pending_task_disposition = value.pendingTaskDisposition;
+      }
+      operation = this.leads.update(existing.id, {
+        ...changes,
+        row_version: existing.row_version,
+      });
+    } else {
+      operation = this.leads.create(fields);
+    }
     this.saving.set(true);
     this.message.set('');
     this.duplicate.set(null);
@@ -290,6 +324,8 @@ export class LeadFormComponent implements OnChanges {
 
   protected fieldError(controlName: keyof typeof this.form.controls): string {
     const control = this.form.controls[controlName];
+    const serverFieldError = this.serverFieldErrors()[controlName];
+    if (serverFieldError) return serverFieldError;
     if (!(control.touched || control.dirty) || !control.errors) return '';
     const labels: Partial<Record<keyof typeof this.form.controls, string>> = {
       firstName: 'First name',
@@ -307,8 +343,11 @@ export class LeadFormComponent implements OnChanges {
       notes: 'Notes',
       consentEvidence: 'Consent evidence',
       consentReference: 'Consent reference',
+      assignmentReason: 'Assignment reason',
+      pendingTaskDisposition: 'Pending task choice',
     };
     const name = labels[controlName] || 'This field';
+    if (control.hasError('server')) return String(control.getError('server'));
     if (control.hasError('required')) return `${name} is required.`;
     if (control.hasError('email')) return 'Enter a valid email address.';
     if (control.hasError('url')) return 'Enter a valid domain or HTTP/HTTPS URL.';
@@ -319,7 +358,6 @@ export class LeadFormComponent implements OnChanges {
       if (controlName === 'assignedUserId') return 'Enter a valid user UUID.';
       return 'Use up to 16 digits and no more than 2 decimal places.';
     }
-    if (control.hasError('server')) return String(control.getError('server'));
     return 'Check this value.';
   }
 
@@ -329,6 +367,28 @@ export class LeadFormComponent implements OnChanges {
 
   protected canChooseAssignee(): boolean {
     return this.canAssign() && this.auth.hasPermission(PERMISSIONS.settingsUsersView);
+  }
+
+  protected assignmentChanged(): boolean {
+    return Boolean(this.lead()) && this.selectedAssigneeId() !== this.originalAssigneeId();
+  }
+
+  protected originalAssigneeResolved(): boolean {
+    const original = this.originalAssigneeId();
+    return !original || this.assignees().some((user) => user.id === original);
+  }
+
+  protected assigneeResolutionMessage(): string {
+    const original = this.originalAssigneeId();
+    if (!original || this.originalAssigneeResolved()) return '';
+    if (this.loadingAssignees()) {
+      return 'Loading eligible users. The saved assignee will remain selected while the list loads.';
+    }
+    if (this.assigneeLoadError()) return this.assigneeLoadError();
+    if (this.assigneeOptionsLoaded()) {
+      return 'The saved assignee is not in the eligible-user list. It will be preserved unless you explicitly choose another assignee or Unassigned.';
+    }
+    return '';
   }
 
   protected canUseVoiceFill(): boolean {
@@ -387,7 +447,7 @@ export class LeadFormComponent implements OnChanges {
     this.voiceNotice.set('Voice draft was not applied. Your existing entries are unchanged.');
   }
 
-  private toDto(): LeadCreateRequest {
+  private toDto(includeAssignment = !this.lead()): LeadCreateRequest {
     const value = this.form.getRawValue();
     const optional = (input: string): string | null => input.trim() || null;
     const fields: LeadFieldsDto = {
@@ -418,7 +478,7 @@ export class LeadFormComponent implements OnChanges {
       consent_evidence: optional(value.consentEvidence),
       consent_reference: optional(value.consentReference),
     };
-    if (this.canAssign()) {
+    if (includeAssignment && this.canAssign()) {
       return { ...fields, assigned_user_id: optional(value.assignedUserId) };
     }
     return fields;
@@ -449,6 +509,7 @@ export class LeadFormComponent implements OnChanges {
 
   private populate(lead: Lead | null): void {
     if (!lead) return;
+    this.originalAssigneeId.set(lead.assigned_user_id);
     this.form.reset({
       firstName: lead.first_name,
       lastName: lead.last_name,
@@ -474,23 +535,60 @@ export class LeadFormComponent implements OnChanges {
       revenuePeriod: lead.revenue_period || '',
       notes: lead.notes || '',
       assignedUserId: lead.assigned_user_id || '',
+      assignmentReason: '',
+      pendingTaskDisposition: 'transfer',
       consentStatus: lead.consent_status,
       consentEvidence: lead.consent_evidence || '',
       consentReference: lead.consent_reference || '',
     });
+    this.syncAssignmentValidators();
   }
 
-  private loadAssignees(): void {
-    this.loadingAssignees.set(true);
+  private loadAssignees(page = 1, accumulated: SettingsUser[] = []): void {
+    if (page === 1) {
+      this.loadingAssignees.set(true);
+      this.assigneeOptionsLoaded.set(false);
+      this.assigneeLoadError.set('');
+    }
     this.settings
-      .listUsers(1, 100)
-      .pipe(
-        finalize(() => this.loadingAssignees.set(false)),
-        takeUntilDestroyed(this.destroyRef),
-      )
+      .listUsers(page, 100)
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: ({ data }) => this.assignees.set(data.items.filter((user) => user.is_active)),
+        next: ({ data }) => {
+          const users = [...accumulated, ...data.items].filter((user) => user.is_active);
+          this.assignees.set(users);
+          if (data.page * data.size < data.total) {
+            this.loadAssignees(data.page + 1, users);
+            return;
+          }
+          this.assigneeOptionsLoaded.set(true);
+          this.loadingAssignees.set(false);
+        },
+        error: () => {
+          this.assigneeLoadError.set(
+            'Eligible users could not be loaded. The saved assignee is preserved; reload before changing it.',
+          );
+          this.assigneeOptionsLoaded.set(true);
+          this.loadingAssignees.set(false);
+        },
       });
+  }
+
+  private selectedAssigneeId(): string | null {
+    return this.form.controls.assignedUserId.value.trim() || null;
+  }
+
+  private syncAssignmentValidators(): void {
+    const reason = this.form.controls.assignmentReason;
+    const disposition = this.form.controls.pendingTaskDisposition;
+    reason.setValidators(
+      this.assignmentChanged()
+        ? [Validators.required, Validators.maxLength(1000)]
+        : [Validators.maxLength(1000)],
+    );
+    disposition.setValidators(this.assignmentChanged() ? [Validators.required] : []);
+    reason.updateValueAndValidity({ emitEvent: false });
+    disposition.updateValueAndValidity({ emitEvent: false });
   }
 
   private handleError(error: unknown): void {
@@ -526,16 +624,41 @@ export class LeadFormComponent implements OnChanges {
       revenue_period: 'revenuePeriod',
       notes: 'notes',
       assigned_user_id: 'assignedUserId',
+      assignment_reason: 'assignmentReason',
+      pending_task_disposition: 'pendingTaskDisposition',
       consent_status: 'consentStatus',
       consent_evidence: 'consentEvidence',
       consent_reference: 'consentReference',
     };
+    const serverFieldErrors: Record<string, string> = {};
     for (const [field, message] of Object.entries(details.fieldErrors)) {
       const controlName = controlMap[field];
       if (controlName) {
-        this.form.controls[controlName].setErrors({ server: message });
+        serverFieldErrors[controlName] = message;
+        this.form.controls[controlName].setErrors({
+          ...this.form.controls[controlName].errors,
+          server: message,
+        });
         this.form.controls[controlName].markAsTouched();
       }
     }
+    if (!Object.keys(details.fieldErrors).length) {
+      const inferredControl = /assignment_reason/i.test(details.message)
+        ? this.form.controls.assignmentReason
+        : /pending_task_disposition/i.test(details.message)
+          ? this.form.controls.pendingTaskDisposition
+          : /assignee|assigned_user_id/i.test(details.message)
+            ? this.form.controls.assignedUserId
+            : null;
+      if (inferredControl) {
+        inferredControl.setErrors({ ...inferredControl.errors, server: details.message });
+        inferredControl.markAsTouched();
+        const inferredEntry = Object.entries(this.form.controls).find(
+          ([, control]) => control === inferredControl,
+        );
+        if (inferredEntry) serverFieldErrors[inferredEntry[0]] = details.message;
+      }
+    }
+    this.serverFieldErrors.set(serverFieldErrors);
   }
 }

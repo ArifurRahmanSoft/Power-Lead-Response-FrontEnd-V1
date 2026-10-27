@@ -1,0 +1,488 @@
+<header class="page-header">
+  <div>
+    <p class="eyebrow">Mail</p>
+    <h1>Sender Accounts</h1>
+    <p>Manage the authenticated addresses PowerLead can use to send mail.</p>
+  </div>
+  @if (auth.hasPermission(permissions.mailManage)) {
+    <button class="primary-button" type="button" (click)="openCreate()">Add account</button>
+  }
+</header>
+
+@if (successMessage()) {
+  <p class="notice" role="status">{{ successMessage() }}</p>
+}
+@if (errorMessage()) {
+  <p class="alert" role="alert">{{ errorMessage() }}</p>
+}
+
+<section class="accounts-panel" aria-label="Sender accounts">
+  @if (loading()) {
+    <div class="state-box" role="status">Loading sender accounts…</div>
+  } @else if (accounts().length === 0) {
+    <div class="empty-state">
+      <h2>No sender accounts yet</h2>
+      <p>Add a Gmail or business SMTP account to configure outbound mail.</p>
+      @if (auth.hasPermission(permissions.mailManage)) {
+        <button class="secondary-button" type="button" (click)="openCreate()">
+          Add your first account
+        </button>
+      }
+    </div>
+  } @else {
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Sender</th>
+            <th>Provider</th>
+            <th>Status</th>
+            <th>Last connection test</th>
+            <th><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (account of accounts(); track account.id) {
+            <tr [class.inactive-row]="!account.is_active">
+              <td data-label="Sender">
+                <div class="sender-identity">
+                  <strong>{{ account.display_name }}</strong>
+                  <span>{{ account.sender_email }}</span>
+                  @if (account.is_default) {
+                    <span class="badge default">Default</span>
+                  }
+                </div>
+              </td>
+              <td data-label="Provider">{{ providerLabel(account.provider) }}</td>
+              <td data-label="Status">
+                <span
+                  class="badge"
+                  [class.active]="account.is_active"
+                  [class.inactive]="!account.is_active"
+                >
+                  {{ account.is_active ? 'Active' : 'Inactive' }}
+                </span>
+              </td>
+              <td data-label="Last connection test">
+                <div class="test-result">
+                  <span
+                    class="connection-status"
+                    [class.success]="account.connection_status === 'success'"
+                    [class.failed]="account.connection_status === 'failed'"
+                    >{{ connectionLabel(account) }}</span
+                  >
+                  @if (account.last_tested_at) {
+                    <time [attr.datetime]="account.last_tested_at">
+                      {{ account.last_tested_at | date: 'medium' }}
+                    </time>
+                  }
+                  @if (account.last_test_message) {
+                    <small>{{ account.last_test_message }}</small>
+                  }
+                </div>
+              </td>
+              <td class="actions" data-label="Actions">
+                @if (auth.hasPermission(permissions.mailManage)) {
+                  <button
+                    class="icon-button"
+                    type="button"
+                    [disabled]="busyAccountId() === account.id"
+                    (click)="openEdit(account)"
+                  >
+                    Edit
+                  </button>
+                  @if (account.is_active && !account.is_default) {
+                    <button
+                      class="icon-button"
+                      type="button"
+                      [disabled]="busyAccountId() === account.id"
+                      (click)="setDefault(account)"
+                    >
+                      Set default
+                    </button>
+                  }
+                  @if (account.is_active) {
+                    <button
+                      class="icon-button"
+                      type="button"
+                      [disabled]="busyAccountId() === account.id"
+                      (click)="requestConfirmation('deactivate', account)"
+                    >
+                      Deactivate
+                    </button>
+                  }
+                  <button
+                    class="icon-button danger"
+                    type="button"
+                    [disabled]="busyAccountId() === account.id"
+                    (click)="requestConfirmation('delete', account)"
+                  >
+                    Delete
+                  </button>
+                }
+                @if (auth.hasPermission(permissions.mailTest) && account.is_active) {
+                  <button
+                    class="icon-button"
+                    type="button"
+                    [disabled]="busyAccountId() === account.id"
+                    (click)="testConnection(account)"
+                  >
+                    {{ busyAccountId() === account.id ? 'Working…' : 'Test connection' }}
+                  </button>
+                  <button
+                    class="icon-button"
+                    type="button"
+                    [disabled]="busyAccountId() === account.id"
+                    (click)="openTestEmail(account)"
+                  >
+                    Send test email
+                  </button>
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    @if (pageCount() > 1) {
+      <nav class="pagination" aria-label="Sender account pages">
+        <span>Page {{ page() }} of {{ pageCount() }} · {{ total() }} accounts</span>
+        <button
+          type="button"
+          [disabled]="page() <= 1 || loading()"
+          (click)="loadAccounts(page() - 1)"
+        >
+          Previous
+        </button>
+        <button
+          type="button"
+          [disabled]="page() >= pageCount() || loading()"
+          (click)="loadAccounts(page() + 1)"
+        >
+          Next
+        </button>
+      </nav>
+    }
+  }
+</section>
+
+@if (editorMode(); as mode) {
+  <div class="modal-backdrop" (click)="closeEditor()">
+    <section
+      class="modal editor-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="sender-editor-title"
+      (click)="$event.stopPropagation()"
+    >
+      <div class="modal-heading">
+        <div>
+          <p class="eyebrow">{{ mode === 'create' ? 'New sender' : 'Sender settings' }}</p>
+          <h2 id="sender-editor-title">
+            {{ mode === 'create' ? 'Add sender account' : 'Edit sender account' }}
+          </h2>
+        </div>
+        <button
+          class="close-button"
+          type="button"
+          aria-label="Close"
+          [disabled]="saving()"
+          (click)="closeEditor()"
+        >
+          ×
+        </button>
+      </div>
+
+      <form [formGroup]="accountForm" (ngSubmit)="save(false)" novalidate>
+        <div class="form-grid">
+          <div class="form-field">
+            <label for="sender-display-name">Display name</label>
+            <input
+              id="sender-display-name"
+              formControlName="displayName"
+              maxlength="120"
+              autocomplete="organization"
+            />
+            @if (fieldError('displayName')) {
+              <p class="field-error" role="alert">{{ fieldError('displayName') }}</p>
+            }
+          </div>
+          <div class="form-field">
+            <label for="sender-email">Sender email</label>
+            <input
+              id="sender-email"
+              type="email"
+              formControlName="senderEmail"
+              autocomplete="email"
+              (blur)="syncGmailUsername()"
+            />
+            @if (fieldError('senderEmail')) {
+              <p class="field-error" role="alert">{{ fieldError('senderEmail') }}</p>
+            }
+          </div>
+          <div class="form-field full">
+            <label for="sender-provider">Provider</label>
+            <select id="sender-provider" formControlName="provider">
+              <option value="gmail">Gmail</option>
+              <option value="custom_smtp">Business email (custom SMTP)</option>
+            </select>
+            @if (accountForm.controls.provider.value === 'gmail') {
+              <p class="field-help">
+                Gmail uses <strong>smtp.gmail.com</strong>. Use a Google App Password, not your
+                regular Google password. App Passwords require 2-Step Verification and may be
+                unavailable for some managed accounts.
+              </p>
+            } @else {
+              <p class="field-help">
+                Enter the SMTP settings and credential supplied by your business email provider.
+              </p>
+            }
+          </div>
+          <div class="form-field">
+            <label for="smtp-host">SMTP host</label>
+            <input
+              id="smtp-host"
+              formControlName="smtpHost"
+              maxlength="255"
+              autocomplete="off"
+              [readOnly]="accountForm.controls.provider.value === 'gmail'"
+            />
+            @if (fieldError('smtpHost')) {
+              <p class="field-error" role="alert">{{ fieldError('smtpHost') }}</p>
+            }
+          </div>
+          <div class="form-field">
+            <label for="smtp-port">Port</label>
+            <input
+              id="smtp-port"
+              type="number"
+              formControlName="smtpPort"
+              min="1"
+              max="65535"
+              inputmode="numeric"
+            />
+            @if (fieldError('smtpPort')) {
+              <p class="field-error" role="alert">{{ fieldError('smtpPort') }}</p>
+            }
+          </div>
+          <fieldset class="form-field full encryption-options">
+            <legend>Connection security</legend>
+            <label
+              ><input type="radio" formControlName="encryption" value="STARTTLS" /> STARTTLS</label
+            >
+            <label><input type="radio" formControlName="encryption" value="TLS" /> TLS</label>
+          </fieldset>
+          <div class="form-field full">
+            <label for="smtp-username">Username</label>
+            <input
+              id="smtp-username"
+              formControlName="smtpUsername"
+              maxlength="255"
+              autocomplete="username"
+            />
+            @if (fieldError('smtpUsername')) {
+              <p class="field-error" role="alert">{{ fieldError('smtpUsername') }}</p>
+            }
+          </div>
+
+          @if (mode === 'edit' && !replaceCredential()) {
+            <div class="credential-configured full" role="status">
+              <div>
+                <strong>Credential configured</strong>
+                <span>The saved credential cannot be viewed and will remain unchanged.</span>
+              </div>
+              <button
+                class="secondary-button"
+                type="button"
+                (click)="chooseCredentialReplacement()"
+              >
+                Replace credential
+              </button>
+            </div>
+          } @else {
+            <div class="form-field full">
+              <div class="label-row">
+                <label for="smtp-credential">{{
+                  mode === 'create' ? 'Credential' : 'New credential'
+                }}</label>
+                @if (mode === 'edit') {
+                  <button class="text-button" type="button" (click)="cancelCredentialReplacement()">
+                    Keep existing
+                  </button>
+                }
+              </div>
+              <div class="password-input">
+                <input
+                  id="smtp-credential"
+                  [type]="showCredential() ? 'text' : 'password'"
+                  formControlName="credential"
+                  autocomplete="new-password"
+                  spellcheck="false"
+                />
+                <button
+                  type="button"
+                  [attr.aria-label]="
+                    showCredential()
+                      ? 'Hide newly entered credential'
+                      : 'Show newly entered credential'
+                  "
+                  [attr.aria-pressed]="showCredential()"
+                  (click)="showCredential.set(!showCredential())"
+                >
+                  {{ showCredential() ? 'Hide' : 'Show' }}
+                </button>
+              </div>
+              @if (fieldError('credential')) {
+                <p class="field-error" role="alert">{{ fieldError('credential') }}</p>
+              }
+              <p class="field-help">
+                This value is sent only when you save. It is not stored in browser storage.
+              </p>
+            </div>
+          }
+
+          <div class="form-field full">
+            <label for="reply-to">Reply-to <span class="optional">Optional</span></label>
+            <input id="reply-to" type="email" formControlName="replyTo" autocomplete="email" />
+            @if (fieldError('replyTo')) {
+              <p class="field-error" role="alert">{{ fieldError('replyTo') }}</p>
+            }
+          </div>
+          @if (mode === 'create') {
+            <label class="checkbox-field full">
+              <input type="checkbox" formControlName="isDefault" />
+              <span>Set as the default sender account</span>
+            </label>
+          }
+        </div>
+
+        <p class="no-send-note">Saving this form does not test the connection or send an email.</p>
+        <div class="form-actions">
+          <button
+            class="secondary-button"
+            type="button"
+            [disabled]="saving()"
+            (click)="closeEditor()"
+          >
+            Cancel
+          </button>
+          @if (mode === 'create') {
+            <button
+              class="secondary-button"
+              type="button"
+              [disabled]="saving()"
+              (click)="save(true)"
+            >
+              {{ saving() ? 'Saving…' : 'Save & Add Another' }}
+            </button>
+          }
+          <button class="primary-button" type="submit" [disabled]="saving()">
+            {{ saving() ? 'Saving…' : mode === 'create' ? 'Save account' : 'Save changes' }}
+          </button>
+        </div>
+      </form>
+    </section>
+  </div>
+}
+
+@if (confirmCandidate(); as account) {
+  <div class="modal-backdrop">
+    <section
+      class="modal confirm-modal"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="confirm-action-title"
+    >
+      <h2 id="confirm-action-title">
+        {{ confirmAction() === 'delete' ? 'Delete sender account?' : 'Deactivate sender account?' }}
+      </h2>
+      @if (confirmAction() === 'delete') {
+        <p>
+          Delete <strong>{{ account.display_name }}</strong
+          >? If message history references it, the backend will preserve and deactivate it instead.
+        </p>
+      } @else {
+        <p>
+          Deactivate <strong>{{ account.display_name }}</strong
+          >? It can no longer be used for mail and will stop being the default.
+        </p>
+      }
+      <div class="form-actions">
+        <button
+          class="secondary-button"
+          type="button"
+          [disabled]="!!busyAccountId()"
+          (click)="closeConfirmation()"
+        >
+          Cancel
+        </button>
+        <button
+          class="danger-button"
+          type="button"
+          [disabled]="!!busyAccountId()"
+          (click)="confirmAccountAction()"
+        >
+          {{
+            busyAccountId()
+              ? 'Working…'
+              : confirmAction() === 'delete'
+                ? 'Delete account'
+                : 'Deactivate account'
+          }}
+        </button>
+      </div>
+    </section>
+  </div>
+}
+
+@if (testEmailCandidate(); as account) {
+  <div class="modal-backdrop" (click)="closeTestEmail()">
+    <section
+      class="modal confirm-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="test-email-title"
+      (click)="$event.stopPropagation()"
+    >
+      <h2 id="test-email-title">Send a test email</h2>
+      <p>
+        This is separate from connection testing. A real email will be sent now from
+        <strong>{{ account.sender_email }}</strong> only after you confirm.
+      </p>
+      <form [formGroup]="testEmailForm" (ngSubmit)="sendTestEmail()" novalidate>
+        <div class="form-field">
+          <label for="test-recipient">Recipient</label>
+          <input
+            id="test-recipient"
+            type="email"
+            formControlName="recipient"
+            autocomplete="email"
+          />
+          @if (testEmailError('recipient')) {
+            <p class="field-error" role="alert">{{ testEmailError('recipient') }}</p>
+          }
+        </div>
+        <label class="checkbox-field">
+          <input type="checkbox" formControlName="confirmed" />
+          <span>I confirm that I want to send this test email.</span>
+        </label>
+        @if (testEmailError('confirmed')) {
+          <p class="field-error" role="alert">{{ testEmailError('confirmed') }}</p>
+        }
+        <div class="form-actions">
+          <button
+            class="secondary-button"
+            type="button"
+            [disabled]="!!busyAccountId()"
+            (click)="closeTestEmail()"
+          >
+            Cancel
+          </button>
+          <button class="primary-button" type="submit" [disabled]="!!busyAccountId()">
+            {{ busyAccountId() ? 'Sending…' : 'Send test email' }}
+          </button>
+        </div>
+      </form>
+    </section>
+  </div>
+}

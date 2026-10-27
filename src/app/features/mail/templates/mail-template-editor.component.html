@@ -1,0 +1,264 @@
+<header class="page-header">
+  <div>
+    <a class="back-link" routerLink="/mail/templates">← Mail Templates</a>
+    <p class="eyebrow">{{ templateId ? 'Edit template' : 'New template' }}</p>
+    <h1>{{ template()?.name || 'Create mail template' }}</h1>
+  </div>
+  <div class="header-actions">
+    @if (template(); as current) {
+      <span class="version-badge" [class.approved]="current.approval_status === 'approved'">
+        {{ current.approval_status }} · v{{ current.version }}
+      </span>
+      <button
+        class="secondary-button"
+        type="button"
+        [disabled]="templateForm.dirty"
+        (click)="openPreview()"
+      >
+        {{ showPreview() ? 'Hide preview' : 'Preview' }}
+      </button>
+      @if (
+        auth.hasPermission(permissions.mailTemplatesApprove) &&
+        auth.role() === 'owner' &&
+        current.approval_status === 'draft'
+      ) {
+        <button
+          class="approve-button"
+          type="button"
+          [disabled]="templateForm.dirty || approving()"
+          (click)="approve()"
+        >
+          {{ approving() ? 'Approving…' : 'Approve draft' }}
+        </button>
+      }
+    }
+  </div>
+</header>
+
+@if (template()?.approval_status === 'approved') {
+  <p class="version-note" role="status">
+    This is approved version {{ template()?.version }}. Saving content or changing assets creates a
+    new draft version; the approved version remains unchanged.
+  </p>
+}
+@if (errorMessage()) {
+  <p class="alert" role="alert">{{ errorMessage() }}</p>
+}
+@if (notice()) {
+  <p class="notice" role="status">{{ notice() }}</p>
+}
+@if (unknownVariables().length) {
+  <div class="variable-warning" role="alert">
+    <strong>Unknown or malformed variables</strong>
+    <span>
+      {{ unknownVariables().join(', ') }}. Use only the Insert Variable list; variables must keep
+      the exact <code>{{ '{{field_name}}' }}</code> format.
+    </span>
+  </div>
+}
+
+@if (loading()) {
+  <div class="loading-state" role="status">Loading template…</div>
+} @else {
+  <div class="editor-layout" [class.with-preview]="showPreview()">
+    <form class="editor-card" [formGroup]="templateForm" (ngSubmit)="save()" novalidate>
+      <section class="basic-fields">
+        <label>
+          <span>Template Name</span>
+          <input formControlName="name" maxlength="120" autocomplete="off" />
+          @if (fieldError('name')) {
+            <small class="field-error">{{ fieldError('name') }}</small>
+          }
+        </label>
+        <label>
+          <span>Subject</span>
+          <input
+            #subjectInput
+            formControlName="subject"
+            maxlength="255"
+            autocomplete="off"
+            (focus)="setActiveTarget('subject')"
+          />
+          @if (fieldError('subject')) {
+            <small class="field-error">{{ fieldError('subject') }}</small>
+          }
+        </label>
+        <label class="enabled-field">
+          <input type="checkbox" formControlName="enabled" />
+          <span>Enabled for future approved use</span>
+        </label>
+      </section>
+
+      <div class="variable-bar">
+        <label for="insert-variable">Insert Variable</label>
+        <select id="insert-variable" (change)="insertVariable($event)">
+          <option value="">Choose a variable…</option>
+          @for (variable of placeholders(); track variable.key) {
+            <option [value]="variable.key">
+              {{ variable.label }} — {{ '{{' + variable.key + '}}' }}
+            </option>
+          }
+        </select>
+        <span>Inserts at the current {{ activeTarget }} cursor.</span>
+      </div>
+
+      <div (focusin)="setActiveTarget('body')">
+        <app-mail-rich-text-editor
+          #bodyEditor
+          editorId="template-body"
+          label="Body"
+          [placeholder]="'Hi Arif, or Hi {{first_name}}…'"
+          formControlName="bodyHtml"
+        />
+        @if (fieldError('bodyHtml')) {
+          <small class="field-error">{{ fieldError('bodyHtml') }}</small>
+        }
+      </div>
+
+      <section class="asset-section" aria-labelledby="inline-image-heading">
+        <div class="section-heading">
+          <div>
+            <h2 id="inline-image-heading">Insert an image</h2>
+            <p>Uploads are private and inserted using a backend asset ID.</p>
+          </div>
+        </div>
+        <div class="image-controls">
+          <label
+            ><span>Location</span
+            ><select [value]="imageTarget" (change)="imageTarget = $any($event.target).value">
+              <option value="body">Body</option>
+              <option value="signature">Signature</option>
+            </select></label
+          >
+          <label
+            ><span>Alternative text</span
+            ><input
+              [value]="imageAlt"
+              (input)="imageAlt = $any($event.target).value"
+              maxlength="180"
+              placeholder="Describe the image"
+          /></label>
+          <label
+            ><span>Display size</span
+            ><select [value]="imageSize" (change)="imageSize = $any($event.target).value">
+              <option value="320">Small</option>
+              <option value="600">Medium</option>
+              <option value="900">Large</option>
+              <option value="">Original</option>
+            </select></label
+          >
+          <button
+            class="secondary-button"
+            type="button"
+            [disabled]="uploading()"
+            (click)="imageInput.click()"
+          >
+            Choose image
+          </button>
+          <input
+            #imageInput
+            class="visually-hidden"
+            type="file"
+            [accept]="imageAccept"
+            (change)="selectImage($event)"
+          />
+        </div>
+        <p class="field-help">
+          PNG, JPEG, GIF, or WebP; up to 10 MiB. Alternative text is saved with the image. The
+          backend may normalize visual sizing to its safe HTML policy.
+        </p>
+      </section>
+
+      <div (focusin)="setActiveTarget('signature')">
+        <app-mail-rich-text-editor
+          #signatureEditor
+          editorId="template-signature"
+          label="Signature"
+          placeholder="Regards,&#10;Sales Team"
+          formControlName="signatureHtml"
+        />
+        @if (fieldError('signatureHtml')) {
+          <small class="field-error">{{ fieldError('signatureHtml') }}</small>
+        }
+      </div>
+
+      <section class="asset-section" aria-labelledby="attachment-heading">
+        <div class="section-heading">
+          <div>
+            <h2 id="attachment-heading">Attachments</h2>
+            <p>Add files recipients will receive with this template.</p>
+          </div>
+          <button
+            class="secondary-button"
+            type="button"
+            [disabled]="uploading()"
+            (click)="attachmentInput.click()"
+          >
+            Attach files
+          </button>
+          <input
+            #attachmentInput
+            class="visually-hidden"
+            type="file"
+            multiple
+            [accept]="attachmentAccept"
+            (change)="selectAttachments($event)"
+          />
+        </div>
+        @if (uploading()) {
+          <div class="upload-progress" role="status">
+            <div>
+              <span>{{ uploadFilename() }}</span
+              ><strong>{{ uploadProgress() }}%</strong>
+            </div>
+            <progress [value]="uploadProgress()" max="100">{{ uploadProgress() }}%</progress>
+          </div>
+        }
+        @if (assets().length) {
+          <ul class="asset-list">
+            @for (asset of assets(); track asset.id) {
+              <li>
+                <span class="file-icon" aria-hidden="true">{{
+                  asset.kind === 'attachment' ? '↗' : '▧'
+                }}</span>
+                <span class="file-copy"
+                  ><strong>{{ asset.filename }}</strong
+                  ><small
+                    >{{ asset.kind.replace('_', ' ') }} · {{ formatBytes(asset.size_bytes) }}</small
+                  ></span
+                >
+                <button
+                  type="button"
+                  [disabled]="removingAssetId() === asset.id"
+                  (click)="removeAsset(asset)"
+                >
+                  {{ removingAssetId() === asset.id ? 'Removing…' : 'Remove' }}
+                </button>
+              </li>
+            }
+          </ul>
+        } @else {
+          <p class="empty-assets">No images or attachments uploaded.</p>
+        }
+        <p class="field-help">
+          Up to 20 assets, 10 MiB each, and 25 MiB estimated encoded message size. Allowed
+          attachments: images, PDF, DOCX, XLSX, TXT, and CSV.
+        </p>
+      </section>
+
+      <footer class="form-actions">
+        <a class="secondary-button link-button" routerLink="/mail/templates">Cancel</a>
+        <button class="primary-button" type="submit" [disabled]="saving() || uploading()">
+          {{ saving() ? 'Saving…' : templateId ? 'Save changes' : 'Create draft' }}
+        </button>
+      </footer>
+    </form>
+
+    @if (showPreview() && template(); as current) {
+      <aside class="preview-card">
+        <p class="preview-freshness">Preview reflects the last saved version.</p>
+        <app-mail-template-preview [templateId]="current.id" [version]="current.version" />
+      </aside>
+    }
+  </div>
+}

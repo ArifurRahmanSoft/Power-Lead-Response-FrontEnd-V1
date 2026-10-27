@@ -121,7 +121,18 @@
             <small class="field-error">{{ fieldError('phone') }}</small>
           }
         </label>
+
         <label
+          >Service Requested<input
+            formControlName="serviceRequested"
+            maxlength="200"
+            placeholder="Website Design, SEO, or Property Valuation"
+          />
+          @if (fieldError('serviceRequested')) {
+            <small class="field-error">{{ fieldError('serviceRequested') }}</small>
+          }
+        </label>
+        <!-- <label
           >Designation<input
             formControlName="designation"
             maxlength="160"
@@ -130,7 +141,7 @@
           @if (fieldError('designation')) {
             <small class="field-error">{{ fieldError('designation') }}</small>
           }
-        </label>
+        </label> -->
         <label
           >City<input formControlName="city" maxlength="120" autocomplete="address-level2"
         /></label>
@@ -180,7 +191,7 @@
           >Company<input formControlName="company" maxlength="200" autocomplete="organization"
         /></label>
         <label>Industry<input formControlName="industry" maxlength="160" /></label>
-        <label class="full"
+        <!-- <label class="full"
           >Service Requested<input
             formControlName="serviceRequested"
             maxlength="200"
@@ -188,6 +199,16 @@
           />
           @if (fieldError('serviceRequested')) {
             <small class="field-error">{{ fieldError('serviceRequested') }}</small>
+          }
+        </label> -->
+           <label class="full"
+          >Designation<input
+            formControlName="designation"
+            maxlength="160"
+            autocomplete="organization-title"
+          />
+          @if (fieldError('designation')) {
+            <small class="field-error">{{ fieldError('designation') }}</small>
           }
         </label>
         <label class="full"
@@ -345,10 +366,21 @@
             @if (canChooseAssignee()) {
               <select formControlName="assignedUserId" [disabled]="loadingAssignees()">
                 <option value="">Unassigned</option>
+                @if (originalAssigneeId(); as savedAssigneeId) {
+                  @if (!originalAssigneeResolved()) {
+                    <option [value]="savedAssigneeId" disabled>
+                      Saved assignee ({{ savedAssigneeId }})
+                    </option>
+                  }
+                }
                 @for (user of assignees(); track user.id) {
                   <option [value]="user.id">{{ user.display_name }} — {{ user.email }}</option>
                 }
               </select>
+              <small class="field-help">Only eligible users returned by the workspace are shown.</small>
+              @if (assigneeResolutionMessage(); as resolutionMessage) {
+                <small class="field-help" role="status">{{ resolutionMessage }}</small>
+              }
             } @else {
               <input
                 formControlName="assignedUserId"
@@ -358,11 +390,47 @@
                 >Your role can assign leads but cannot load the protected workspace-user catalog.
                 Enter an active workspace user ID.</small
               >
-              @if (fieldError('assignedUserId')) {
-                <small class="field-error">{{ fieldError('assignedUserId') }}</small>
-              }
+            }
+            @if (fieldError('assignedUserId')) {
+              <small class="field-error">{{ fieldError('assignedUserId') }}</small>
             }
           </label>
+          @if (assignmentChanged()) {
+            <label class="full"
+              >Assignment Reason
+              <textarea
+                formControlName="assignmentReason"
+                rows="4"
+                maxlength="1000"
+                required
+                placeholder="Why is responsibility changing?"
+              ></textarea>
+              <small class="field-help"
+                >Required because the assignee is being assigned, changed, or cleared.</small
+              >
+              @if (fieldError('assignmentReason')) {
+                <small class="field-error">{{ fieldError('assignmentReason') }}</small>
+              }
+            </label>
+            <fieldset class="full assignment-options">
+              <legend>Pending tasks</legend>
+              <label>
+                <input type="radio" formControlName="pendingTaskDisposition" value="transfer" />
+                <span><b>Transfer</b><small>Move pending tasks to the new assignee.</small></span>
+              </label>
+              <label>
+                <input type="radio" formControlName="pendingTaskDisposition" value="retain" />
+                <span><b>Retain</b><small>Keep pending tasks with their current owners.</small></span>
+              </label>
+              <label>
+                <input type="radio" formControlName="pendingTaskDisposition" value="cancel" />
+                <span><b>Cancel</b><small>Cancel all pending tasks for this lead.</small></span>
+              </label>
+              @if (fieldError('pendingTaskDisposition')) {
+                <small class="field-error">{{ fieldError('pendingTaskDisposition') }}</small>
+              }
+            </fieldset>
+          }
         }
         <label
           >Consent Status<select formControlName="consentStatus">

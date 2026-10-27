@@ -115,6 +115,57 @@
 @if (errorMessage() && !permissionDenied()) {
   <p class="lead-alert" role="alert">{{ errorMessage() }}</p>
 }
+@if (selectionNotice()) {
+  <p class="selection-notice" role="status">{{ selectionNotice() }}</p>
+}
+
+@if (selectedCount() > 0) {
+  <section class="selection-action-bar" aria-label="Lead selection actions">
+    <div>
+      <strong>{{ selectedCount() }} {{ selectedCount() === 1 ? 'lead' : 'leads' }} selected</strong>
+      <span>
+        @if (selectionMode() === 'all_matching') {
+          All {{ total() }} matching leads across every page
+        } @else {
+          {{ selectedOnPageCount() }} on this page · {{ selectedCount() }} total across pages
+        }
+      </span>
+    </div>
+    <div class="selection-actions">
+      @if (
+        selectionMode() === 'selected' &&
+        selectedOnPageCount() === items().length &&
+        total() > selectedCount()
+      ) {
+        <button class="selection-link" type="button" (click)="selectAllMatching()">
+          Select all {{ total() }} matching leads
+        </button>
+      }
+      @if (auth.hasPermission(permissions.mailSend)) {
+        <button class="primary-button" type="button" (click)="sendSelected()">Send Email</button>
+        <button
+          class="primary-button"
+          type="button"
+          [disabled]="selectedCount() > smsBatchLimit"
+          [attr.aria-describedby]="selectedCount() > smsBatchLimit ? 'sms-selection-limit' : null"
+          (click)="sendSelectedSms()"
+        >
+          Send Message
+        </button>
+        @if (selectedCount() > smsBatchLimit) {
+          <span id="sms-selection-limit" class="permission-note">
+            SMS limit: {{ smsBatchLimit }}
+          </span>
+        }
+      } @else {
+        <span class="permission-note">Your role does not have permission to send messages.</span>
+      }
+      <button class="secondary-button" type="button" (click)="clearSelection()">
+        Clear Selection
+      </button>
+    </div>
+  </section>
+}
 
 <section class="lead-panel" aria-label="Lead results">
   @if (loading()) {
@@ -138,8 +189,15 @@
       <table>
         <thead>
           <tr>
-            <th [attr.aria-sort]="ariaSort('tracking_id')">
-              <button type="button" (click)="sortBy('tracking_id')">Tracking ID</button>
+            <th class="selection-column">
+              <input
+                type="checkbox"
+                aria-label="Select current page"
+                title="Select current page"
+                [checked]="allPageSelected()"
+                [indeterminate]="pageSelectionIndeterminate()"
+                (change)="togglePageSelection($event)"
+              />
             </th>
             <th [attr.aria-sort]="ariaSort('name')">
               <button type="button" (click)="sortBy('name')">Full name</button>
@@ -159,16 +217,25 @@
             <th [attr.aria-sort]="ariaSort('assignee')">
               <button type="button" (click)="sortBy('assignee')">Assignee</button>
             </th>
+            <th>Email Status</th>
+            <th>Last Email Type</th>
+            <th>Last Sent</th>
+            <th>SMS Status</th>
+            <th>Message Type</th>
+            <th>Last SMS</th>
             <th><span class="visually-hidden">Actions</span></th>
           </tr>
         </thead>
         <tbody>
           @for (lead of sortedItems(); track lead.id) {
             <tr>
-              <td>
-                <a class="tracking-link" [routerLink]="['/leads', lead.id]">{{
-                  lead.tracking_id
-                }}</a>
+              <td class="selection-column">
+                <input
+                  type="checkbox"
+                  [attr.aria-label]="'Select ' + lead.first_name + ' ' + lead.last_name"
+                  [checked]="isLeadSelected(lead.id)"
+                  (change)="toggleLeadSelection(lead.id, $event)"
+                />
               </td>
               <td>
                 <strong>{{ lead.first_name }} {{ lead.last_name }}</strong>
@@ -188,8 +255,42 @@
                 {{ assigneeName(lead.assigned_user_id) }}
               </td>
               <td>
+                <span class="email-status-badge email-state-{{ emailSummary(lead).state }}">
+                  {{ emailStatusLabel(lead) }}
+                </span>
+              </td>
+              <td>{{ emailStageLabel(lead) }}</td>
+              <td class="email-time-cell">
+                @if (lastEmailAt(lead); as emailAt) {
+                  {{ emailAt | date: 'short' }}
+                } @else {
+                  —
+                }
+              </td>
+              <td>
+                <span class="sms-status-badge sms-state-{{ smsSummary(lead).provider_status }}">
+                  {{ smsStatusLabel(lead) }}
+                </span>
+              </td>
+              <td>{{ smsTypeLabel(lead) }}</td>
+              <td class="email-time-cell">
+                @if (smsSummary(lead).last_successful_at; as smsAt) {
+                  {{ smsAt | date: 'short' }}
+                } @else {
+                  —
+                }
+              </td>
+              <td>
                 <div class="row-actions">
                   <a [routerLink]="['/leads', lead.id]">View</a>
+                  @if (auth.hasPermission(permissions.mailSend)) {
+                    <button class="send-row-action" type="button" (click)="sendToLead(lead)">
+                      Send Email
+                    </button>
+                    <button class="send-row-action" type="button" (click)="sendSmsToLead(lead)">
+                      Send Message
+                    </button>
+                  }
                   @if (auth.hasPermission(permissions.leadsUpdate)) {
                     <a [routerLink]="['/leads', lead.id, 'edit']">Edit</a>
                   }
@@ -215,6 +316,21 @@
     </div>
   }
 </section>
+
+<app-bulk-send-email
+  [selectionMode]="composeMode()"
+  [selectedLeadIds]="composeLeadIds()"
+  [filters]="composeFilters()"
+  [recipientCount]="composeRecipientCount()"
+  [selectionRevision]="selectionRevision()"
+  (batchChanged)="refreshEmailStatus()"
+/>
+
+<app-send-sms
+  [recipients]="composeSmsRecipients()"
+  [recipientCount]="composeSmsRecipientCount()"
+  (batchChanged)="refreshSmsStatus()"
+/>
 
 @if (archiveCandidate(); as lead) {
   <div class="lead-modal-backdrop">

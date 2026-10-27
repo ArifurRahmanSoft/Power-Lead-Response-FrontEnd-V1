@@ -7,6 +7,13 @@ export interface MenuItem {
   requiredPermissions: PermissionKey[];
   permissionMatch?: 'all' | 'any';
   roleLabels?: Partial<Record<WorkspaceRole, string>>;
+  children?: readonly MenuChildItem[];
+}
+
+export interface MenuChildItem {
+  label: string;
+  path: string;
+  requiredPermissions: PermissionKey[];
 }
 
 export interface SettingsMenuItem {
@@ -52,6 +59,35 @@ export const WORKSPACE_MENU: readonly MenuItem[] = [
     roleLabels: { staff: 'Assigned leads' },
   },
   {
+    label: 'Customers',
+    path: '/customers',
+    icon: 'customers',
+    requiredPermissions: [PERMISSIONS.customersView],
+  },
+  {
+    label: 'Tasks',
+    path: '/tasks',
+    icon: 'tasks',
+    requiredPermissions: [PERMISSIONS.leadsView],
+    children: [
+      {
+        label: 'My Tasks',
+        path: '/tasks/my',
+        requiredPermissions: [PERMISSIONS.leadsView],
+      },
+      {
+        label: 'Today',
+        path: '/tasks/today',
+        requiredPermissions: [PERMISSIONS.leadsView],
+      },
+      {
+        label: 'Overdue',
+        path: '/tasks/overdue',
+        requiredPermissions: [PERMISSIONS.leadsView],
+      },
+    ],
+  },
+  {
     label: 'Workflows',
     path: '/workflows',
     icon: 'workflows',
@@ -68,6 +104,43 @@ export const WORKSPACE_MENU: readonly MenuItem[] = [
     path: '/templates',
     icon: 'templates',
     requiredPermissions: [PERMISSIONS.templatesView],
+  },
+  {
+    label: 'Messages',
+    path: '/messages',
+    icon: 'messages',
+    requiredPermissions: [PERMISSIONS.messagesView],
+    children: [
+      {
+        label: 'WhatsApp',
+        path: '/messages/whatsapp',
+        requiredPermissions: [PERMISSIONS.messagesView],
+      },
+      {
+        label: 'Messenger',
+        path: '/messages/messenger',
+        requiredPermissions: [PERMISSIONS.messagesView],
+      },
+    ],
+  },
+  {
+    label: 'Mail',
+    path: '/mail',
+    icon: 'mail',
+    requiredPermissions: [PERMISSIONS.mailView, PERMISSIONS.mailTemplatesView],
+    permissionMatch: 'any',
+    children: [
+      {
+        label: 'Sender Accounts',
+        path: '/mail/sender-accounts',
+        requiredPermissions: [PERMISSIONS.mailView],
+      },
+      {
+        label: 'Mail Templates',
+        path: '/mail/templates',
+        requiredPermissions: [PERMISSIONS.mailTemplatesView],
+      },
+    ],
   },
   {
     label: 'Settings',
@@ -90,7 +163,12 @@ export function availableMenuItems(
     item.permissionMatch === 'any'
       ? item.requiredPermissions.some((permission) => permissions.includes(permission))
       : item.requiredPermissions.every((permission) => permissions.includes(permission)),
-  );
+  ).map((item) => ({
+    ...item,
+    children: item.children?.filter((child) =>
+      child.requiredPermissions.every((permission) => permissions.includes(permission)),
+    ),
+  }));
 }
 
 export function availableSettingsMenuItems(

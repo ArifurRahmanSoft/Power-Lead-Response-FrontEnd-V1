@@ -1,0 +1,125 @@
+<section class="conversation-list" aria-label="WhatsApp conversations">
+  <header class="list-header">
+    <div>
+      <p class="eyebrow">Messages</p>
+      <h1>WhatsApp</h1>
+    </div>
+    <div class="header-actions">
+      @if (refreshing) {
+        <span class="refreshing" role="status">Refreshing...</span>
+      }
+      @if (canStartMetaChat) {
+        <button class="new-chat-button" type="button" (click)="newChat.emit()">New Chat</button>
+      }
+    </div>
+  </header>
+
+  <div class="channel-control">
+    @if (channels.length > 1) {
+      <label>
+        <span>WhatsApp channel</span>
+        <select [value]="selectedProvider" (change)="chooseProvider($any($event.target).value)">
+          @for (channel of channels; track channel.provider) {
+            <option [value]="channel.provider">{{ channel.label }}</option>
+          }
+        </select>
+      </label>
+    } @else {
+      <span class="single-channel">{{
+        currentChannel()?.label || 'Existing Twilio WhatsApp'
+      }}</span>
+    }
+    @if (currentChannel()?.senderAddress) {
+      <small>
+        Sender {{ currentChannel()?.senderAddress }}
+        @if (currentChannel()?.accountId) {
+          <span> · Account {{ currentChannel()?.accountId }}</span>
+        }
+      </small>
+    } @else {
+      <small>Existing workspace Twilio channel</small>
+    }
+  </div>
+
+  <label class="search-box">
+    <span class="sr-only">Search WhatsApp conversations</span>
+    <span aria-hidden="true">⌕</span>
+    <input
+      type="search"
+      maxlength="200"
+      autocomplete="off"
+      placeholder="Search name or number"
+      [formControl]="searchControl"
+    />
+  </label>
+
+  <div class="conversation-scroll">
+    @if (loading && !conversations.length) {
+      <div class="state" role="status">
+        <span class="spinner" aria-hidden="true"></span>
+        <p>Loading conversations...</p>
+      </div>
+    } @else if (errorMessage && !conversations.length) {
+      <div class="state error-state" role="alert">
+        <strong>Conversations are unavailable</strong>
+        <p>{{ errorMessage }}</p>
+        <button type="button" (click)="retry.emit()">Try again</button>
+      </div>
+    } @else if (!conversations.length) {
+      <div class="state">
+        <span class="empty-icon" aria-hidden="true">◎</span><strong>No conversations found</strong>
+        <p>Incoming WhatsApp conversations will appear here.</p>
+      </div>
+    } @else {
+      <div class="conversation-items">
+        @for (conversation of conversations; track conversation.id) {
+          <button
+            type="button"
+            class="conversation-item"
+            [class.selected]="conversation.id === selectedId"
+            [attr.aria-current]="conversation.id === selectedId ? 'true' : null"
+            (click)="conversationSelected.emit(conversation)"
+          >
+            <span class="contact-avatar" aria-hidden="true">{{
+              displayName(conversation).charAt(0).toUpperCase()
+            }}</span>
+            <span class="conversation-copy">
+              <span class="row primary-row"
+                ><strong>{{ displayName(conversation) }}</strong
+                ><time [attr.datetime]="conversation.last_message_at">{{
+                  conversation.last_message_at | date: 'shortTime'
+                }}</time></span
+              >
+              <span class="row snippet-row">
+                <span>{{ conversation.last_message_preview || 'No message preview' }}</span>
+                @if (conversation.unread_count > 0) {
+                  <span
+                    class="unread-badge"
+                    [attr.aria-label]="conversation.unread_count + ' unread messages'"
+                    >{{ conversation.unread_count > 99 ? '99+' : conversation.unread_count }}</span
+                  >
+                }
+              </span>
+              <span
+                class="link-label"
+                [class.unlinked]="!conversation.lead_id && !conversation.customer_id"
+                >{{ linkedLabel(conversation) }}</span
+              >
+            </span>
+          </button>
+        }
+      </div>
+      @if (errorMessage) {
+        <div class="inline-error" role="alert">
+          <span>{{ errorMessage }}</span
+          ><button type="button" (click)="retry.emit()">Retry</button>
+        </div>
+      }
+      @if (hasMore) {
+        <button class="load-more" type="button" [disabled]="loadingMore" (click)="loadMore.emit()">
+          {{ loadingMore ? 'Loading...' : 'Load more conversations' }}
+        </button>
+      }
+    }
+  </div>
+</section>

@@ -8,6 +8,7 @@ import {
   workspaceGuard,
   workspaceSelectionGuard,
 } from './core/guards/auth.guard';
+import { pendingChangesGuard } from './core/guards/pending-changes.guard';
 
 export const routes: Routes = [
   {
@@ -118,6 +119,30 @@ export const routes: Routes = [
           ),
         title: 'Lead details | PowerLead',
       },
+      {
+        path: 'customers',
+        canActivate: [permissionGuard],
+        data: { requiredPermissions: [PERMISSIONS.customersView] },
+        loadComponent: () =>
+          import('./features/customers/pages/customer-list/customer-list.component').then(
+            (component) => component.CustomerListComponent,
+          ),
+        title: 'Customers | PowerLead',
+      },
+      {
+        path: 'customers/:id',
+        canActivate: [permissionGuard],
+        data: { requiredPermissions: [PERMISSIONS.customersView] },
+        loadComponent: () =>
+          import('./features/customers/pages/customer-detail/customer-detail.component').then(
+            (component) => component.CustomerDetailComponent,
+          ),
+        title: 'Customer details | PowerLead',
+      },
+      { path: 'tasks', pathMatch: 'full', redirectTo: 'tasks/my' },
+      taskRoute('tasks/my', 'My Tasks', 'mine'),
+      taskRoute('tasks/today', 'Today', 'today'),
+      taskRoute('tasks/overdue', 'Overdue', 'overdue'),
       featureRoute(
         'workflows',
         'Workflows',
@@ -139,6 +164,71 @@ export const routes: Routes = [
         [PERMISSIONS.templatesView],
         [PERMISSIONS.templatesCreate, PERMISSIONS.templatesUpdate, PERMISSIONS.templatesDelete],
       ),
+      { path: 'messages', pathMatch: 'full', redirectTo: 'messages/whatsapp' },
+      {
+        path: 'messages/whatsapp',
+        canActivate: [permissionGuard],
+        data: { requiredPermissions: [PERMISSIONS.messagesView] },
+        loadComponent: () =>
+          import('./features/whatsapp/pages/whatsapp-inbox/whatsapp-inbox.component').then(
+            (component) => component.WhatsAppInboxComponent,
+          ),
+        title: 'WhatsApp Messages | PowerLead',
+      },
+      {
+        path: 'messages/messenger',
+        canActivate: [permissionGuard],
+        data: { requiredPermissions: [PERMISSIONS.messagesView] },
+        loadComponent: () =>
+          import('./features/messenger/pages/messenger-inbox/messenger-inbox.component').then(
+            (component) => component.MessengerInboxComponent,
+          ),
+        title: 'Messenger Messages | PowerLead',
+      },
+      { path: 'mail', pathMatch: 'full', redirectTo: 'mail/sender-accounts' },
+      {
+        path: 'mail/sender-accounts',
+        canActivate: [permissionGuard],
+        data: { requiredPermissions: [PERMISSIONS.mailView] },
+        loadComponent: () =>
+          import('./features/mail/sender-accounts/sender-accounts.component').then(
+            (component) => component.SenderAccountsComponent,
+          ),
+        title: 'Sender Accounts | PowerLead',
+      },
+      {
+        path: 'mail/templates',
+        canActivate: [permissionGuard],
+        canDeactivate: [pendingChangesGuard],
+        data: { requiredPermissions: [PERMISSIONS.mailTemplatesView] },
+        loadComponent: () =>
+          import('./features/mail/templates/mail-template-list.component').then(
+            (component) => component.MailTemplateListComponent,
+          ),
+        title: 'Mail Templates | PowerLead',
+      },
+      {
+        path: 'mail/templates/new',
+        canActivate: [permissionGuard],
+        canDeactivate: [pendingChangesGuard],
+        data: { requiredPermissions: [PERMISSIONS.mailTemplatesManage] },
+        loadComponent: () =>
+          import('./features/mail/templates/mail-template-editor.component').then(
+            (component) => component.MailTemplateEditorComponent,
+          ),
+        title: 'Create Mail Template | PowerLead',
+      },
+      {
+        path: 'mail/templates/:id/edit',
+        canActivate: [permissionGuard],
+        canDeactivate: [pendingChangesGuard],
+        data: { requiredPermissions: [PERMISSIONS.mailTemplatesManage] },
+        loadComponent: () =>
+          import('./features/mail/templates/mail-template-editor.component').then(
+            (component) => component.MailTemplateEditorComponent,
+          ),
+        title: 'Edit Mail Template | PowerLead',
+      },
       {
         path: 'settings',
         canActivate: [permissionGuard],
@@ -224,5 +314,18 @@ function featureRoute(
       ),
     title: `${pageTitle} | PowerLead`,
     data: { pageTitle, description, requiredPermissions, writePermissions },
+  } satisfies Routes[number];
+}
+
+function taskRoute(path: string, taskTitle: string, taskView: 'mine' | 'today' | 'overdue') {
+  return {
+    path,
+    canActivate: [permissionGuard],
+    data: { requiredPermissions: [PERMISSIONS.leadsView], taskTitle, taskView },
+    loadComponent: () =>
+      import('./features/tasks/pages/task-list/task-list.component').then(
+        (component) => component.TaskListComponent,
+      ),
+    title: `${taskTitle} | PowerLead`,
   } satisfies Routes[number];
 }

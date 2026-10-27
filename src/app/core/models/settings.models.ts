@@ -70,9 +70,12 @@ export type MenuAction =
   | 'export'
   | 'import'
   | 'assign'
+  | 'convert'
   | 'status'
   | 'activate'
   | 'approve'
+  | 'manage'
+  | 'test'
   | 'reset_password';
 
 export interface MenuCatalogItem {

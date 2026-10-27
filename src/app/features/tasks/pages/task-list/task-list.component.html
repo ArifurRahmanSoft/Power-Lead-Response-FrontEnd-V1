@@ -1,0 +1,15 @@
+<header class="lead-page-header task-page-header">
+  <div>
+    <p class="eyebrow">Task workspace</p>
+    <h1>{{ title }}</h1>
+    <p>Review due work, update ownership and priority, and complete follow-ups.</p>
+  </div>
+</header>
+
+<nav class="task-view-tabs" aria-label="Task views">
+  <a routerLink="/tasks/my" routerLinkActive="active">My Tasks</a>
+  <a routerLink="/tasks/today" routerLinkActive="active">Today</a>
+  <a routerLink="/tasks/overdue" routerLinkActive="active">Overdue</a>
+</nav>
+
+<app-task-manager [view]="view" />

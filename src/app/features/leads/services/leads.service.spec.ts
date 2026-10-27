@@ -3,7 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { TestBed } from '@angular/core/testing';
 
 import { API_CONFIG } from '../../../core/config/api.config';
-import { LeadCreateRequest } from '../models/lead.models';
+import { LeadActivityCreateRequest, LeadCreateRequest } from '../models/lead.models';
 import { LeadsService } from './leads.service';
 
 describe('LeadsService', () => {
@@ -103,6 +103,114 @@ describe('LeadsService', () => {
     expect(archive.request.method).toBe('DELETE');
     archive.flush({ success: true, message: 'Lead archived' });
     expect(mutation).toHaveBeenCalledTimes(3);
+  });
+
+  it('uses record-only activity endpoints for timeline, logging, and corrections', () => {
+    service.listActivities('lead-id', 2, 10).subscribe();
+    const timeline = http.expectOne(
+      `${API_CONFIG.baseUrl}/leads/lead-id/activities?page=2&size=10`,
+    );
+    expect(timeline.request.method).toBe('GET');
+    timeline.flush({ success: true, data: { items: [], page: 2, size: 10, total: 0 } });
+
+    service.listAssignmentHistory('lead-id', 1, 100).subscribe();
+    const assignments = http.expectOne(
+      `${API_CONFIG.baseUrl}/leads/lead-id/assignment-history?page=1&size=100`,
+    );
+    expect(assignments.request.method).toBe('GET');
+    assignments.flush({ success: true, data: { items: [], page: 1, size: 100, total: 0 } });
+
+    const activity: LeadActivityCreateRequest = {
+      activity_type: 'initial_contact',
+      channel: 'phone',
+      direction: 'outbound',
+      occurred_at: '2026-10-13T04:30:00.000Z',
+      performed_by: 'user-id',
+      outcome: 'Connected',
+      notes: 'Called from an external phone.',
+    };
+    service.createActivity('lead-id', activity).subscribe();
+    const create = http.expectOne(`${API_CONFIG.baseUrl}/leads/lead-id/activities`);
+    expect(create.request.method).toBe('POST');
+    expect(create.request.body).toEqual(activity);
+    create.flush({ success: true, data: {} });
+
+    service
+      .amendActivity('lead-id', 'activity-id', {
+        amendment_reason: 'Corrected the documented outcome',
+        outcome: 'Follow-up requested',
+      })
+      .subscribe();
+    const amend = http.expectOne(
+      `${API_CONFIG.baseUrl}/leads/lead-id/activities/activity-id/amendments`,
+    );
+    expect(amend.request.method).toBe('POST');
+    expect(amend.request.body).toEqual({
+      amendment_reason: 'Corrected the documented outcome',
+      outcome: 'Follow-up requested',
+    });
+    amend.flush({ success: true, data: {} });
+  });
+
+  it('uses record-only reply and concurrency-safe booking endpoints', () => {
+    service
+      .recordReply('lead-id', {
+        channel: 'email',
+        occurred_at: '2026-10-13T08:30:00Z',
+        summary: 'Interested in the proposal.',
+        related_outbound_activity_id: 'activity-id',
+      })
+      .subscribe();
+    const reply = http.expectOne(`${API_CONFIG.baseUrl}/leads/lead-id/replies`);
+    expect(reply.request.method).toBe('POST');
+    expect(reply.request.body.related_outbound_activity_id).toBe('activity-id');
+    reply.flush({ success: true, data: {} });
+
+    service.listBookings('lead-id', 2, 25).subscribe();
+    http
+      .expectOne(`${API_CONFIG.baseUrl}/leads/lead-id/bookings?page=2&size=25`)
+      .flush({ success: true, data: { items: [], page: 2, size: 25, total: 0 } });
+
+    service.listBookingHistory('lead-id', 'booking-id', 3, 50).subscribe();
+    const history = http.expectOne(
+      `${API_CONFIG.baseUrl}/leads/lead-id/bookings/booking-id/history?page=3&size=50`,
+    );
+    expect(history.request.method).toBe('GET');
+    history.flush({ success: true, data: { items: [], page: 3, size: 50, total: 0 } });
+
+    service
+      .createBooking('lead-id', {
+        scheduled_at: '2026-10-15T04:30:00Z',
+        timezone: 'Asia/Dhaka',
+        responsible_user_id: 'user-id',
+        source: 'manual',
+        status: 'scheduled',
+        notes: null,
+      })
+      .subscribe();
+    const create = http.expectOne(`${API_CONFIG.baseUrl}/leads/lead-id/bookings`);
+    expect(create.request.method).toBe('POST');
+    expect(create.request.body.source).toBe('manual');
+    create.flush({ success: true, data: {} });
+
+    service
+      .rescheduleBooking('lead-id', 'booking-id', {
+        row_version: 3,
+        scheduled_at: '2026-10-16T04:30:00Z',
+        timezone: 'Asia/Dhaka',
+        notes: 'Changed by customer',
+      })
+      .subscribe();
+    const reschedule = http.expectOne(
+      `${API_CONFIG.baseUrl}/leads/lead-id/bookings/booking-id/reschedule`,
+    );
+    expect(reschedule.request.body.row_version).toBe(3);
+    reschedule.flush({ success: true, data: {} });
+
+    service.cancelBooking('lead-id', 'booking-id', { row_version: 4, notes: null }).subscribe();
+    const cancel = http.expectOne(`${API_CONFIG.baseUrl}/leads/lead-id/bookings/booking-id/cancel`);
+    expect(cancel.request.body).toEqual({ row_version: 4, notes: null });
+    cancel.flush({ success: true, data: {} });
   });
 
   it('uses the backend Excel preview, status, error, and idempotent commit endpoints', () => {

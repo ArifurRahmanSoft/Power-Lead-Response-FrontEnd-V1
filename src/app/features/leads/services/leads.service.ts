@@ -7,12 +7,23 @@ import {
   ActionResponse,
   DataResponse,
   Lead,
+  LeadActivity,
+  LeadActivityAmendRequest,
+  LeadActivityCreateRequest,
+  LeadAssignmentHistory,
   LeadCreateRequest,
+  LeadBooking,
+  LeadBookingCreateRequest,
+  LeadBookingEvent,
+  LeadBookingRescheduleRequest,
+  LeadBookingTransitionRequest,
   LeadFilters,
   LeadImportBatch,
   LeadImportRow,
   LeadServiceOption,
   LeadUpdateRequest,
+  ManualReply,
+  ManualReplyCreateRequest,
   PageData,
 } from '../models/lead.models';
 
@@ -35,6 +46,110 @@ export class LeadsService {
 
   get(leadId: string): Observable<DataResponse<Lead>> {
     return this.http.get<DataResponse<Lead>>(`${this.baseUrl}/${leadId}`);
+  }
+
+  listActivities(
+    leadId: string,
+    page: number,
+    size: number,
+  ): Observable<DataResponse<PageData<LeadActivity>>> {
+    return this.http.get<DataResponse<PageData<LeadActivity>>>(
+      `${this.baseUrl}/${leadId}/activities`,
+      { params: new HttpParams().set('page', page).set('size', size) },
+    );
+  }
+
+  listAssignmentHistory(
+    leadId: string,
+    page: number,
+    size: number,
+  ): Observable<DataResponse<PageData<LeadAssignmentHistory>>> {
+    return this.http.get<DataResponse<PageData<LeadAssignmentHistory>>>(
+      `${this.baseUrl}/${leadId}/assignment-history`,
+      { params: new HttpParams().set('page', page).set('size', size) },
+    );
+  }
+
+  createActivity(
+    leadId: string,
+    request: LeadActivityCreateRequest,
+  ): Observable<DataResponse<LeadActivity>> {
+    return this.http.post<DataResponse<LeadActivity>>(
+      `${this.baseUrl}/${leadId}/activities`,
+      request,
+    );
+  }
+
+  amendActivity(
+    leadId: string,
+    activityId: string,
+    request: LeadActivityAmendRequest,
+  ): Observable<DataResponse<LeadActivity>> {
+    return this.http.post<DataResponse<LeadActivity>>(
+      `${this.baseUrl}/${leadId}/activities/${activityId}/amendments`,
+      request,
+    );
+  }
+
+  recordReply(
+    leadId: string,
+    request: ManualReplyCreateRequest,
+  ): Observable<DataResponse<ManualReply>> {
+    return this.http.post<DataResponse<ManualReply>>(`${this.baseUrl}/${leadId}/replies`, request);
+  }
+
+  listBookings(
+    leadId: string,
+    page: number,
+    size: number,
+  ): Observable<DataResponse<PageData<LeadBooking>>> {
+    return this.http.get<DataResponse<PageData<LeadBooking>>>(
+      `${this.baseUrl}/${leadId}/bookings`,
+      {
+        params: new HttpParams().set('page', page).set('size', size),
+      },
+    );
+  }
+
+  listBookingHistory(
+    leadId: string,
+    bookingId: string,
+    page: number,
+    size: number,
+  ): Observable<DataResponse<PageData<LeadBookingEvent>>> {
+    return this.http.get<DataResponse<PageData<LeadBookingEvent>>>(
+      `${this.baseUrl}/${leadId}/bookings/${bookingId}/history`,
+      { params: new HttpParams().set('page', page).set('size', size) },
+    );
+  }
+
+  createBooking(
+    leadId: string,
+    request: LeadBookingCreateRequest,
+  ): Observable<DataResponse<LeadBooking>> {
+    return this.http.post<DataResponse<LeadBooking>>(`${this.baseUrl}/${leadId}/bookings`, request);
+  }
+
+  cancelBooking(
+    leadId: string,
+    bookingId: string,
+    request: LeadBookingTransitionRequest,
+  ): Observable<DataResponse<LeadBooking>> {
+    return this.http.post<DataResponse<LeadBooking>>(
+      `${this.baseUrl}/${leadId}/bookings/${bookingId}/cancel`,
+      request,
+    );
+  }
+
+  rescheduleBooking(
+    leadId: string,
+    bookingId: string,
+    request: LeadBookingRescheduleRequest,
+  ): Observable<DataResponse<LeadBooking>> {
+    return this.http.post<DataResponse<LeadBooking>>(
+      `${this.baseUrl}/${leadId}/bookings/${bookingId}/reschedule`,
+      request,
+    );
   }
 
   create(request: LeadCreateRequest): Observable<DataResponse<Lead>> {

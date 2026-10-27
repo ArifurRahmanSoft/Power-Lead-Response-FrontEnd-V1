@@ -1,0 +1,151 @@
+:host {
+  display: block;
+  border-top: 1px solid #dfe5ef;
+  background: #fff;
+}
+.composer {
+  padding: 0.7rem 0.85rem max(0.75rem, env(safe-area-inset-bottom));
+}
+.compose-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: end;
+}
+.message-field {
+  position: relative;
+  display: block;
+}
+.message-field textarea {
+  display: block;
+  width: 100%;
+  min-height: 3.35rem;
+  max-height: 10rem;
+  resize: vertical;
+  padding: 0.68rem 0.75rem 1.2rem;
+  border: 1px solid #cfd8e6;
+  border-radius: 0.7rem;
+  outline: 0;
+  color: #17243a;
+  background: #f9faff;
+  font: inherit;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+.message-field textarea:focus {
+  border-color: #316ff6;
+  box-shadow: 0 0 0 3px rgb(49 111 246 / 13%);
+}
+.message-field textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+.character-count {
+  position: absolute;
+  right: 0.62rem;
+  bottom: 0.32rem;
+  color: #788398;
+  font-size: 0.58rem;
+}
+.character-count.over-limit {
+  color: #a32f2b;
+  font-weight: 800;
+}
+.send-button {
+  display: flex;
+  min-width: 5.8rem;
+  height: 3.35rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0 0.9rem;
+  border: 1px solid #215cd6;
+  border-radius: 0.65rem;
+  color: #fff;
+  background: #316ff6;
+  font-weight: 780;
+  cursor: pointer;
+}
+.send-button:hover:not(:disabled) {
+  background: #245edb;
+}
+.send-button:focus-visible,
+.feedback button:focus-visible {
+  outline: 3px solid rgb(49 111 246 / 25%);
+  outline-offset: 2px;
+}
+.send-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+.composer-note,
+.feedback {
+  margin: 0 0 0.6rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.52rem;
+  font-size: 0.71rem;
+  line-height: 1.45;
+}
+.permission-note {
+  color: #5c6370;
+  background: #f0f2f6;
+}
+.window-note {
+  color: #795c28;
+  background: #fff7e6;
+}
+.window-note strong {
+  display: block;
+  margin-bottom: 0.2rem;
+}
+.window-note p,
+.window-note ul {
+  margin: 0;
+}
+.window-note ul {
+  padding-left: 1rem;
+}
+.feedback {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.feedback.error {
+  color: #8d302c;
+  background: #fff0ef;
+}
+.feedback.notice {
+  color: #28559e;
+  background: #edf3ff;
+}
+.feedback button {
+  flex: 0 0 auto;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid currentColor;
+  border-radius: 0.4rem;
+  color: inherit;
+  background: transparent;
+  font-weight: 750;
+  cursor: pointer;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+@media (max-width: 520px) {
+  .composer {
+    padding: 0.55rem 0.6rem max(0.65rem, env(safe-area-inset-bottom));
+  }
+  .compose-row {
+    gap: 0.45rem;
+  }
+  .send-button {
+    min-width: 4.5rem;
+    padding: 0 0.65rem;
+  }
+}

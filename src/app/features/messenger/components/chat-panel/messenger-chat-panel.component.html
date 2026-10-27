@@ -1,0 +1,150 @@
+@if (conversation) {
+  <section
+    class="chat-panel"
+    aria-label="Messenger conversation with {{ conversation.contact_display_name }}"
+  >
+    <header class="chat-header">
+      <button
+        class="back-button"
+        type="button"
+        aria-label="Back to conversations"
+        (click)="back.emit()"
+      >
+        <span aria-hidden="true">←</span>
+      </button>
+      <span class="header-avatar" aria-hidden="true">{{
+        conversation.contact_display_name.charAt(0).toUpperCase()
+      }}</span>
+      <div class="contact-heading">
+        <strong>{{ conversation.contact_display_name }}</strong>
+        <span>Conversation via {{ pageDisplayName() }}</span>
+        <small>{{ channel?.active ? 'Connected Facebook Page' : 'Facebook Page' }}</small>
+      </div>
+      <div class="linked-record">
+        @if (conversation.customer_id) {
+          <a [routerLink]="['/customers', conversation.customer_id]">{{ linkedLabel() }}</a>
+        } @else if (conversation.lead_id) {
+          <a [routerLink]="['/leads', conversation.lead_id]">{{ linkedLabel() }}</a>
+        } @else {
+          <span>{{ linkedLabel() }}</span>
+        }
+        @if (canSend) {
+          <button type="button" (click)="linkRequested.emit()">
+            {{ conversation.lead_id || conversation.customer_id ? 'Change' : 'Link record' }}
+          </button>
+        }
+      </div>
+      <div class="reply-window" [class.closed]="!replyWindowOpen">
+        <span class="window-dot" aria-hidden="true"></span>
+        @if (replyWindowOpen) {
+          <span>
+            Reply window open
+            @if (conversation.eligibility.window_expires_at) {
+              until
+              <time [attr.datetime]="conversation.eligibility.window_expires_at">{{
+                conversation.eligibility.window_expires_at | date: 'short'
+              }}</time>
+            }
+          </span>
+        } @else {
+          <span>{{
+            conversation.eligibility.blocking_reasons[0]?.message || 'Reply window closed'
+          }}</span>
+        }
+      </div>
+    </header>
+
+    <div #messageScroller class="message-scroller" (scroll)="onScroll()">
+      @if (loading && !messages.length) {
+        <div class="chat-state" role="status"><strong>Loading message history...</strong></div>
+      } @else if (errorMessage && !messages.length) {
+        <div class="chat-state error-state" role="alert">
+          <strong>Message history is unavailable</strong>
+          <p>{{ errorMessage }}</p>
+          <button type="button" (click)="retry.emit()">Try again</button>
+        </div>
+      } @else {
+        @if (errorMessage && messages.length) {
+          <div class="history-warning" role="alert">
+            <span>{{ errorMessage }}</span>
+            <button type="button" (click)="retry.emit()">Retry refresh</button>
+          </div>
+        }
+        @if (hasOlder) {
+          <button
+            class="older-button"
+            type="button"
+            [disabled]="loadingOlder"
+            (click)="requestOlder()"
+          >
+            {{ loadingOlder ? 'Loading older messages...' : 'Load older messages' }}
+          </button>
+        }
+        @if (!messages.length) {
+          <div class="chat-state">
+            <strong>No stored messages</strong>
+            <p>PowerLead only shows records returned by the Messenger backend.</p>
+          </div>
+        } @else {
+          <ol class="message-list" aria-live="polite">
+            @for (message of messages; track message.id) {
+              <li class="message-row" [class.outgoing]="message.direction === 'outbound'">
+                <article class="message-bubble" [class.failed]="message.status === 'failed'">
+                  <p>{{ message.body }}</p>
+                  @for (media of message.media; track $index) {
+                    <p class="media-placeholder">
+                      <span aria-hidden="true">▧</span>
+                      Unsupported Messenger {{ media.type || 'attachment' }} attachment
+                    </p>
+                  }
+                  <footer>
+                    @if (message.direction === 'outbound') {
+                      <span class="source-label">{{ actorLabel(message) }}</span>
+                    }
+                    <time [attr.datetime]="message.occurred_at">{{
+                      message.occurred_at | date: 'short'
+                    }}</time>
+                    @if (message.direction === 'outbound') {
+                      <span class="message-status" [attr.data-status]="message.status">{{
+                        statusLabel(message.status)
+                      }}</span>
+                    }
+                  </footer>
+                  @if (message.status === 'failed' && message.failure_reason) {
+                    <p class="failure-reason">{{ message.failure_reason }}</p>
+                  }
+                </article>
+              </li>
+            }
+          </ol>
+        }
+      }
+      @if (newMessageCount > 0) {
+        <button class="new-message-button" type="button" (click)="scrollToLatest()">
+          {{ newMessageCount }} new {{ newMessageCount === 1 ? 'message' : 'messages' }} ↓
+        </button>
+      }
+    </div>
+
+    <app-messenger-reply-composer
+      [draft]="draft"
+      [canSend]="canSend"
+      [eligibility]="conversation.eligibility"
+      [replyWindowOpen]="replyWindowOpen"
+      [sending]="sending"
+      [checkingResult]="checkingResult"
+      [uncertain]="uncertain"
+      [errorMessage]="composerError"
+      [notice]="composerNotice"
+      (draftChange)="draftChange.emit($event)"
+      (send)="send.emit()"
+      (checkResult)="checkResult.emit()"
+    />
+  </section>
+} @else {
+  <section class="no-selection" aria-label="No Messenger conversation selected">
+    <span aria-hidden="true">✦</span>
+    <strong>Select a conversation</strong>
+    <p>Choose a stored Facebook Page conversation to read and reply.</p>
+  </section>
+}

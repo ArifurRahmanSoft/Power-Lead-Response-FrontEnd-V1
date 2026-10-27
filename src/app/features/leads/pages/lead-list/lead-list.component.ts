@@ -1,4 +1,5 @@
-import { Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { Component, DestroyRef, ViewChild, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -25,20 +26,28 @@ import {
   LEAD_SOURCES,
   LEAD_STATUSES,
   Lead,
+  LeadEmailSummary,
   LeadFilters,
+  LeadSmsSummary,
   LeadServiceOption,
 } from '../../models/lead.models';
 import { leadErrorDetails } from '../../services/lead-errors';
 import { LeadsService } from '../../services/leads.service';
+import { BulkSendEmailComponent } from '../../../mail/bulk-send-email/bulk-send-email.component';
+import { BulkSelectionMode } from '../../../mail/models/outbound-message.models';
+import { SendSmsComponent } from '../../../sms/send-sms/send-sms.component';
+import { SMS_DIRECT_SEND_MAX_RECIPIENTS, SmsRecipientInput } from '../../../sms/models/sms.models';
 
-type SortColumn = 'tracking_id' | 'name' | 'company' | 'email' | 'country' | 'status' | 'assignee';
+type SortColumn = 'name' | 'company' | 'email' | 'country' | 'status' | 'assignee';
 
 @Component({
   selector: 'app-lead-list',
-  imports: [ReactiveFormsModule, RouterLink],
+  imports: [DatePipe, ReactiveFormsModule, RouterLink, BulkSendEmailComponent, SendSmsComponent],
   templateUrl: './lead-list.component.html',
 })
 export class LeadListComponent {
+  @ViewChild(BulkSendEmailComponent) private bulkComposer?: BulkSendEmailComponent;
+  @ViewChild(SendSmsComponent) private smsComposer?: SendSmsComponent;
   private readonly leads = inject(LeadsService);
   private readonly settings = inject(SettingsService);
   protected readonly auth = inject(AuthService);
@@ -57,13 +66,24 @@ export class LeadListComponent {
   protected readonly page = signal(1);
   protected readonly pageSize = 20;
   protected readonly total = signal(0);
-  protected readonly sortColumn = signal<SortColumn>('tracking_id');
+  protected readonly sortColumn = signal<SortColumn>('name');
   protected readonly sortDirection = signal<'asc' | 'desc'>('asc');
   protected readonly assignees = signal<SettingsUser[]>([]);
   protected readonly serviceOptions = signal<LeadServiceOption[]>([]);
   protected readonly serviceOptionsLoading = signal(false);
   protected readonly serviceOptionsError = signal('');
   protected readonly serviceOptionsTotal = signal(0);
+  protected readonly selectedLeadIds = signal<ReadonlySet<string>>(new Set());
+  protected readonly selectionMode = signal<BulkSelectionMode>('selected');
+  protected readonly selectionNotice = signal('');
+  protected readonly selectionRevision = signal(0);
+  protected readonly composeMode = signal<BulkSelectionMode>('selected');
+  protected readonly composeLeadIds = signal<readonly string[]>([]);
+  protected readonly composeFilters = signal<Readonly<Record<string, string>>>({});
+  protected readonly composeRecipientCount = signal(0);
+  protected readonly composeSmsRecipients = signal<readonly SmsRecipientInput[]>([]);
+  protected readonly composeSmsRecipientCount = signal(0);
+  protected readonly smsBatchLimit = SMS_DIRECT_SEND_MAX_RECIPIENTS;
   protected readonly countryOptions = COUNTRY_OPTIONS;
   protected readonly statuses = LEAD_STATUSES;
   protected readonly emailStatuses = EMAIL_STATUSES;
@@ -85,6 +105,8 @@ export class LeadListComponent {
 
   private readonly refreshList = new Subject<void>();
   private readonly serviceOptionRequests = new Subject<string>();
+  private activeFilterKey: string | null = null;
+  private readonly selectedLeadSnapshots = new Map<string, Lead>();
 
   protected readonly pageCount = computed(() =>
     Math.max(1, Math.ceil(this.total() / this.pageSize)),
@@ -102,11 +124,39 @@ export class LeadListComponent {
     };
     return [...this.items()].sort((a, b) => value(a).localeCompare(value(b)) * direction);
   });
+  protected readonly selectedCount = computed(() =>
+    this.selectionMode() === 'all_matching' ? this.total() : this.selectedLeadIds().size,
+  );
+  protected readonly selectedOnPageCount = computed(
+    () => this.items().filter((lead) => this.selectedLeadIds().has(lead.id)).length,
+  );
+  protected readonly allPageSelected = computed(
+    () =>
+      this.items().length > 0 &&
+      (this.selectionMode() === 'all_matching' ||
+        this.selectedOnPageCount() === this.items().length),
+  );
+  protected readonly pageSelectionIndeterminate = computed(
+    () =>
+      this.selectionMode() !== 'all_matching' &&
+      this.selectedOnPageCount() > 0 &&
+      !this.allPageSelected(),
+  );
 
   constructor() {
     combineLatest([this.route.queryParamMap, this.refreshList.pipe(startWith(undefined))])
       .pipe(
         switchMap(([params]) => {
+          const filterKey = JSON.stringify(
+            params.keys
+              .filter((key) => key !== 'page')
+              .sort()
+              .map((key) => [key, params.getAll(key)]),
+          );
+          if (this.activeFilterKey !== null && this.activeFilterKey !== filterKey) {
+            this.clearSelection('Selection cleared because filters changed.');
+          }
+          this.activeFilterKey = filterKey;
           const page = Math.max(1, Number(params.get('page')) || 1);
           this.page.set(page);
           this.filters.patchValue(
@@ -142,6 +192,9 @@ export class LeadListComponent {
         this.loading.set(false);
         if (data) {
           this.items.set(data.items);
+          for (const lead of data.items) {
+            if (this.selectedLeadIds().has(lead.id)) this.selectedLeadSnapshots.set(lead.id, lead);
+          }
           this.page.set(data.page);
           this.total.set(data.total);
         } else if (error) {
@@ -187,9 +240,10 @@ export class LeadListComponent {
     this.serviceOptionSearch.valueChanges
       .pipe(debounceTime(250), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
       .subscribe((search) => this.serviceOptionRequests.next(search));
-    this.leads.mutations$
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => this.serviceOptionRequests.next(this.serviceOptionSearch.value));
+    this.leads.mutations$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      this.refreshList.next();
+      this.serviceOptionRequests.next(this.serviceOptionSearch.value);
+    });
 
     let previousWorkspaceId: string | null | undefined;
     toObservable(this.auth.selectedWorkspace)
@@ -224,6 +278,7 @@ export class LeadListComponent {
   }
 
   protected applyFilters(): void {
+    this.clearSelection('Selection cleared because filters changed.');
     const value = this.filters.getRawValue();
     void this.router.navigate([], {
       relativeTo: this.route,
@@ -244,6 +299,7 @@ export class LeadListComponent {
   }
 
   protected clearFilters(): void {
+    this.clearSelection('Selection cleared because filters changed.');
     this.filters.reset({}, { emitEvent: false });
     this.serviceOptionSearch.setValue('', { emitEvent: false });
     this.serviceOptionRequests.next('');
@@ -261,6 +317,136 @@ export class LeadListComponent {
       queryParams: { page },
       queryParamsHandling: 'merge',
     });
+  }
+
+  protected togglePageSelection(event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    if (this.selectionMode() === 'all_matching' && !checked) {
+      this.clearSelection('All-matching selection cleared.');
+      return;
+    }
+    const next = new Set(this.selectedLeadIds());
+    for (const lead of this.items()) {
+      if (checked) {
+        next.add(lead.id);
+        this.selectedLeadSnapshots.set(lead.id, lead);
+      } else {
+        next.delete(lead.id);
+        this.selectedLeadSnapshots.delete(lead.id);
+      }
+    }
+    this.selectionMode.set('selected');
+    this.selectedLeadIds.set(next);
+    this.selectionNotice.set(
+      checked
+        ? `${this.items().length} leads on this page selected. Other page selections are preserved.`
+        : 'Current page selection cleared. Other page selections are preserved.',
+    );
+    this.selectionRevision.update((value) => value + 1);
+  }
+
+  protected toggleLeadSelection(leadId: string, event: Event): void {
+    const checked = (event.target as HTMLInputElement).checked;
+    if (this.selectionMode() === 'all_matching' && !checked) {
+      this.clearSelection('All-matching selection cleared because a lead was deselected.');
+      return;
+    }
+    const next = new Set(this.selectedLeadIds());
+    if (checked) {
+      next.add(leadId);
+      const lead = this.items().find((item) => item.id === leadId);
+      if (lead) this.selectedLeadSnapshots.set(leadId, lead);
+    } else {
+      next.delete(leadId);
+      this.selectedLeadSnapshots.delete(leadId);
+    }
+    this.selectionMode.set('selected');
+    this.selectedLeadIds.set(next);
+    this.selectionNotice.set('');
+    this.selectionRevision.update((value) => value + 1);
+  }
+
+  protected isLeadSelected(leadId: string): boolean {
+    return this.selectionMode() === 'all_matching' || this.selectedLeadIds().has(leadId);
+  }
+
+  protected selectAllMatching(): void {
+    if (this.total() < 1) return;
+    this.selectionMode.set('all_matching');
+    this.selectedLeadIds.set(new Set());
+    this.selectedLeadSnapshots.clear();
+    for (const lead of this.items()) this.selectedLeadSnapshots.set(lead.id, lead);
+    this.selectionNotice.set(`All ${this.total()} matching leads are selected across every page.`);
+    this.selectionRevision.update((value) => value + 1);
+  }
+
+  protected clearSelection(message = 'Selection cleared.'): void {
+    if (this.selectedCount() === 0) return;
+    this.selectionMode.set('selected');
+    this.selectedLeadIds.set(new Set());
+    this.selectedLeadSnapshots.clear();
+    this.selectionNotice.set(message);
+    this.selectionRevision.update((value) => value + 1);
+  }
+
+  protected sendSelected(): void {
+    if (!this.auth.hasPermission(PERMISSIONS.mailSend) || this.selectedCount() < 1) return;
+    this.composeMode.set(this.selectionMode());
+    this.composeLeadIds.set([...this.selectedLeadIds()]);
+    this.composeFilters.set(this.bulkFilterSnapshot());
+    this.composeRecipientCount.set(this.selectedCount());
+    this.selectionRevision.update((value) => value + 1);
+    setTimeout(() => this.bulkComposer?.openComposer());
+  }
+
+  protected sendToLead(lead: Lead): void {
+    if (!this.auth.hasPermission(PERMISSIONS.mailSend)) return;
+    this.composeMode.set('selected');
+    this.composeLeadIds.set([lead.id]);
+    this.composeFilters.set({});
+    this.composeRecipientCount.set(1);
+    this.selectionRevision.update((value) => value + 1);
+    setTimeout(() => this.bulkComposer?.openComposer());
+  }
+
+  protected sendSelectedSms(): void {
+    if (!this.auth.hasPermission(PERMISSIONS.mailSend) || this.selectedCount() < 1) return;
+    if (this.selectedCount() > this.smsBatchLimit) {
+      this.selectionNotice.set(
+        `${this.selectedCount()} leads are selected; SMS supports up to ${this.smsBatchLimit} recipients per send.`,
+      );
+      return;
+    }
+    const selected =
+      this.selectionMode() === 'all_matching'
+        ? this.items().slice(0, this.selectedCount())
+        : [...this.selectedLeadIds()]
+            .map((id) => this.selectedLeadSnapshots.get(id))
+            .filter((lead): lead is Lead => Boolean(lead));
+    if (selected.length !== this.selectedCount()) {
+      this.selectionNotice.set(
+        'The SMS recipients could not be resolved safely. Clear the selection and select the intended leads again.',
+      );
+      return;
+    }
+    this.composeSmsRecipients.set(selected.map((lead) => this.smsRecipient(lead)));
+    this.composeSmsRecipientCount.set(this.selectedCount());
+    setTimeout(() => this.smsComposer?.openComposer());
+  }
+
+  protected sendSmsToLead(lead: Lead): void {
+    if (!this.auth.hasPermission(PERMISSIONS.mailSend)) return;
+    this.composeSmsRecipients.set([this.smsRecipient(lead)]);
+    this.composeSmsRecipientCount.set(1);
+    setTimeout(() => this.smsComposer?.openComposer());
+  }
+
+  protected refreshEmailStatus(): void {
+    this.refreshList.next();
+  }
+
+  protected refreshSmsStatus(): void {
+    this.refreshList.next();
   }
 
   protected sortBy(column: SortColumn): void {
@@ -286,6 +472,66 @@ export class LeadListComponent {
     return countryName(value) || '—';
   }
 
+  protected lastEmailAt(lead: Lead): string | null {
+    const summary = this.emailSummary(lead);
+    return summary.last_successful_email_at || summary.sent_at || null;
+  }
+
+  protected emailSummary(lead: Lead): LeadEmailSummary {
+    return (
+      lead.email_summary ?? {
+        state: 'not_contacted_by_email',
+        stage: null,
+        attempt_count: 0,
+      }
+    );
+  }
+
+  protected emailStageLabel(lead: Lead): string {
+    const stage = this.emailSummary(lead).stage;
+    return stage ? this.label(stage) : '—';
+  }
+
+  protected emailStatusLabel(lead: Lead): string {
+    const state = this.emailSummary(lead).state;
+    if (state === 'not_contacted_by_email') return 'No email history';
+    if (state === 'queued') return 'Queued — not sent';
+    if (state === 'unknown') return 'Unknown — uncertain outcome';
+    return this.label(state);
+  }
+
+  protected smsSummary(lead: Lead): LeadSmsSummary {
+    return (
+      lead.sms_summary ?? {
+        contact_type: null,
+        provider_status: 'not_contacted_by_sms',
+        last_successful_at: null,
+      }
+    );
+  }
+
+  protected smsStatusLabel(lead: Lead): string {
+    const status = this.smsSummary(lead).provider_status;
+    if (!status || status === 'not_contacted_by_sms') return 'No SMS history';
+    if (status === 'accepted') return 'Accepted — not delivered';
+    if (status === 'queued') return 'Queued — not delivered';
+    if (status === 'unknown') return 'Unknown — uncertain outcome';
+    return this.label(status);
+  }
+
+  protected smsTypeLabel(lead: Lead): string {
+    const type = this.smsSummary(lead).contact_type;
+    return type ? this.label(type) : '—';
+  }
+
+  private smsRecipient(lead: Lead): SmsRecipientInput {
+    return {
+      id: lead.id,
+      name: `${lead.first_name} ${lead.last_name}`.trim(),
+      phone: lead.phone?.trim() || null,
+    };
+  }
+
   protected archive(): void {
     const lead = this.archiveCandidate();
     if (!lead || this.mutating()) return;
@@ -301,7 +547,6 @@ export class LeadListComponent {
         next: ({ message }) => {
           this.archiveCandidate.set(null);
           this.notice.set(message);
-          this.refreshList.next();
         },
         error: (error: unknown) => {
           this.archiveCandidate.set(null);
@@ -323,6 +568,14 @@ export class LeadListComponent {
       source: value.source as LeadFilters['source'],
       assigned_user_id: value.assignedUserId,
     };
+  }
+
+  private bulkFilterSnapshot(): Readonly<Record<string, string>> {
+    return Object.fromEntries(
+      Object.entries(this.currentFilters())
+        .map(([key, value]) => [key, typeof value === 'string' ? value.trim() : value] as const)
+        .filter((entry): entry is readonly [string, string] => Boolean(entry[1])),
+    );
   }
 
   private loadAssignees(): void {

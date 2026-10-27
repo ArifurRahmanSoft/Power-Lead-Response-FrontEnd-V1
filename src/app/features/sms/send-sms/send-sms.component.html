@@ -1,0 +1,229 @@
+@if (open()) {
+  <div class="lead-modal-backdrop sms-modal-backdrop">
+    <section
+      class="lead-modal sms-compose-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="sms-compose-title"
+      aria-describedby="sms-compose-description"
+      (keydown)="onModalKeydown($event)"
+    >
+      <header class="sms-modal-header">
+        <div>
+          <p class="eyebrow">Lead messaging</p>
+          <h2 id="sms-compose-title">Send Message</h2>
+          <p id="sms-compose-description">
+            {{ recipientCount }} {{ recipientCount === 1 ? 'lead' : 'leads' }} selected · maximum
+            {{ batchLimit }} per send
+          </p>
+        </div>
+        <button
+          class="sms-close-button"
+          type="button"
+          aria-label="Close Send Message dialog"
+          [disabled]="sending() || checkingResult() || refreshing() || uncertainSubmission()"
+          (click)="close()"
+        >
+          ×
+        </button>
+      </header>
+
+      @if (errorMessage()) {
+        <p class="lead-alert sms-feedback" role="alert">{{ errorMessage() }}</p>
+      }
+      @if (notice()) {
+        <p class="lead-notice sms-feedback" role="status">{{ notice() }}</p>
+      }
+
+      @if (!batch()) {
+        <form class="sms-form" [formGroup]="composeForm" (ngSubmit)="send()">
+          <section class="sms-recipient-summary" aria-labelledby="sms-recipient-title">
+            <div class="sms-section-heading">
+              <h3 id="sms-recipient-title">Recipients</h3>
+              <span>{{ recipientCount }} selected</span>
+            </div>
+            <ul>
+              @for (recipient of recipients; track recipient.id) {
+                <li>
+                  <span>
+                    <strong>{{ recipient.name }}</strong>
+                    <small>{{ recipient.phone || 'No phone number' }}</small>
+                  </span>
+                  @if (phoneIssue(recipient); as issue) {
+                    <em>{{ issue }}</em>
+                  }
+                </li>
+              }
+            </ul>
+          </section>
+
+          <div class="sms-fields">
+            <label for="sms-template">
+              Message Template
+              <select
+                #templateSelect
+                id="sms-template"
+                formControlName="templateId"
+                [attr.aria-busy]="loadingTemplates()"
+              >
+                <option value="">
+                  {{ loadingTemplates() ? 'Loading templates…' : 'Choose a template' }}
+                </option>
+                @for (template of templates(); track template.id) {
+                  <option [value]="template.id">{{ template.name }}</option>
+                }
+              </select>
+            </label>
+            <label for="sms-contact-type">
+              Message Type
+              <select id="sms-contact-type" formControlName="contactType">
+                @for (type of contactTypes; track type) {
+                  <option [value]="type">{{ contactTypeLabel(type) }}</option>
+                }
+              </select>
+            </label>
+          </div>
+
+          <p class="sms-delivery-note">
+            Phone eligibility, consent, template values, and provider configuration are checked by
+            the backend. An accepted SMS is not the same as a delivered SMS.
+          </p>
+
+          @if (uncertainSubmission()) {
+            <div class="sms-uncertain-action">
+              <p>
+                This reads the saved operation using the original idempotency key. Check Result
+                never calls the send endpoint.
+              </p>
+              <button
+                class="primary-button"
+                type="button"
+                [disabled]="sending() || checkingResult()"
+                (click)="resolveSubmission()"
+              >
+                {{ checkingResult() ? 'Checking Result…' : 'Check Result' }}
+              </button>
+            </div>
+          } @else {
+            <div class="sms-actions">
+              <button
+                class="secondary-button"
+                type="button"
+                [disabled]="sending()"
+                (click)="close()"
+              >
+                Cancel
+              </button>
+              <button class="primary-button" type="submit" [disabled]="!canSend()">
+                {{ sending() ? 'Sending…' : 'Send to ' + recipientCount + ' Leads' }}
+              </button>
+            </div>
+          }
+        </form>
+      } @else if (batch(); as result) {
+        <section class="sms-results" aria-labelledby="sms-results-title">
+          @if (batchInProgress(result)) {
+            <p class="sms-in-progress" role="status">
+              The original request was recovered and is still in progress. These are the latest
+              backend recipient states; use Refresh Status to check again without sending a new
+              message.
+            </p>
+          }
+          <div class="sms-section-heading">
+            <div>
+              <p class="eyebrow">Backend results</p>
+              <h3 id="sms-results-title">{{ result.selection_count }} recipient results</h3>
+            </div>
+            <span class="sms-batch-state state-{{ result.status }}">{{
+              statusLabel(result.status)
+            }}</span>
+          </div>
+
+          <div class="sms-count-grid" aria-label="SMS result counts">
+            <div>
+              <strong>{{ result.accepted_count }}</strong
+              ><span>Accepted</span>
+            </div>
+            <div>
+              <strong>{{ result.queued_count }}</strong
+              ><span>Queued</span>
+            </div>
+            <div>
+              <strong>{{ result.sent_count }}</strong
+              ><span>Sent</span>
+            </div>
+            <div>
+              <strong>{{ result.delivered_count }}</strong
+              ><span>Delivered</span>
+            </div>
+            <div>
+              <strong>{{ result.failed_count }}</strong
+              ><span>Failed</span>
+            </div>
+            <div>
+              <strong>{{ result.undelivered_count }}</strong
+              ><span>Undelivered</span>
+            </div>
+            <div>
+              <strong>{{ result.unknown_count }}</strong
+              ><span>Unknown</span>
+            </div>
+            <div>
+              <strong>{{ result.skipped_count }}</strong
+              ><span>Skipped</span>
+            </div>
+          </div>
+
+          <ol class="sms-result-list">
+            @for (recipient of result.recipients; track recipient.requested_lead_id) {
+              <li>
+                <div>
+                  <strong>{{ recipientName(recipient) }}</strong>
+                  <small>{{ recipientPhone(recipient) }}</small>
+                </div>
+                <span class="sms-result-status state-{{ recipient.status }}">
+                  {{ contactTypeLabel(result.contact_type) }} — {{ statusLabel(recipient.status) }}
+                </span>
+                @if (safeReason(recipient.reason); as reason) {
+                  <p>{{ reason }}</p>
+                }
+                @if (recipient.warnings.length) {
+                  <ul>
+                    @for (warning of recipient.warnings; track warning) {
+                      <li>{{ safeReason(warning) }}</li>
+                    }
+                  </ul>
+                }
+              </li>
+            }
+          </ol>
+
+          <div class="sms-actions">
+            <button
+              class="secondary-button"
+              type="button"
+              [disabled]="refreshing()"
+              (click)="close()"
+            >
+              Close
+            </button>
+            @if (auth.hasPermission(permissions.mailView)) {
+              <button
+                class="primary-button"
+                type="button"
+                [disabled]="refreshing()"
+                (click)="refreshStatus()"
+              >
+                {{ refreshing() ? 'Refreshing…' : 'Refresh Status' }}
+              </button>
+            } @else {
+              <span class="sms-permission-note"
+                >Mail view permission is required to refresh status.</span
+              >
+            }
+          </div>
+        </section>
+      }
+    </section>
+  </div>
+}

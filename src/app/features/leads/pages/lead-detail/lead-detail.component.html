@@ -23,10 +23,34 @@
       </p>
     </div>
     <div class="header-actions">
+      @if (auth.hasPermission(permissions.mailSend)) {
+        <app-send-email
+          contextType="lead"
+          [contextId]="current.id"
+          [recipient]="current.email"
+          [eligibilityIssues]="emailEligibilityIssues()"
+          (messageChanged)="handleOutboundMessage($event)"
+        />
+      }
       @if (auth.hasPermission(permissions.leadsUpdate)) {
+        <button class="secondary-button" type="button" (click)="openFollowUp()">
+          {{ current.status === 'converted' ? 'Create customer-service task' : 'Create follow-up' }}
+        </button>
+        <button class="secondary-button" type="button" (click)="openRecordReply()">
+          Record reply
+        </button>
+        <button class="secondary-button" type="button" (click)="openRecordBooking()">
+          Record booking
+        </button>
+        <button class="primary-button" type="button" (click)="openLogContact()">Log contact</button>
         <a class="secondary-button button-link" [routerLink]="['/leads', current.id, 'edit']"
           >Edit details</a
         >
+      }
+      @if (canConvert()) {
+        <button class="primary-button" type="button" (click)="openConversion()">
+          Convert to customer
+        </button>
       }
       @if (auth.hasPermission(permissions.leadsDelete)) {
         <button class="danger-button" type="button" (click)="archiveOpen.set(true)">Archive</button>
@@ -40,201 +64,1359 @@
     <p class="lead-alert" role="alert">{{ errorMessage() }}</p>
   }
 
-  <div class="detail-layout">
-    <div class="detail-main">
-      <section class="detail-card">
-        <h2>Contact</h2>
-        <dl class="detail-grid">
-          <div>
-            <dt>Email</dt>
-            <dd>
-              <a href="mailto:{{ current.email }}">{{ current.email }}</a>
-            </dd>
+  <nav class="lead-detail-tabs" aria-label="Lead detail sections">
+    <button
+      type="button"
+      [class.active]="detailTab() === 'details'"
+      [attr.aria-current]="detailTab() === 'details' ? 'page' : null"
+      (click)="detailTab.set('details')"
+    >
+      Details & activity
+    </button>
+    <button
+      type="button"
+      [class.active]="detailTab() === 'tasks'"
+      [attr.aria-current]="detailTab() === 'tasks' ? 'page' : null"
+      (click)="detailTab.set('tasks')"
+    >
+      Tasks
+    </button>
+  </nav>
+
+  @if (detailTab() === 'details') {
+    <div class="detail-layout">
+      <div class="detail-main">
+        <section class="detail-card">
+          <h2>Contact</h2>
+          <dl class="detail-grid">
+            <div>
+              <dt>Email</dt>
+              <dd>
+                <a href="mailto:{{ current.email }}">{{ current.email }}</a>
+              </dd>
+            </div>
+            <div>
+              <dt>Email status</dt>
+              <dd>
+                <span class="lead-badge">{{ label(current.email_status) }}</span>
+              </dd>
+            </div>
+            <div>
+              <dt>Phone</dt>
+              <dd>{{ current.phone || 'Not provided' }}</dd>
+            </div>
+            <div>
+              <dt>Location</dt>
+              <dd>
+                {{
+                  current.city || current.state || country(current.country)
+                    ? (current.city || '') +
+                      (current.city && current.state ? ', ' : '') +
+                      (current.state || '') +
+                      ((current.city || current.state) && country(current.country) ? ', ' : '') +
+                      country(current.country)
+                    : 'Not provided'
+                }}
+              </dd>
+            </div>
+          </dl>
+        </section>
+        <section class="detail-card">
+          <h2>Company</h2>
+          <dl class="detail-grid">
+            <div>
+              <dt>Company</dt>
+              <dd>{{ current.company || 'Not provided' }}</dd>
+            </div>
+            <div>
+              <dt>Industry</dt>
+              <dd>{{ current.industry || 'Not provided' }}</dd>
+            </div>
+            <div>
+              <dt>Service requested</dt>
+              <dd>{{ current.service_requested || 'Not provided' }}</dd>
+            </div>
+            <div>
+              <dt>Company size</dt>
+              <dd>{{ label(current.company_size) }}</dd>
+            </div>
+            <div>
+              <dt>Website</dt>
+              <dd>
+                @if (externalUrl(current.company_website); as websiteUrl) {
+                  <a [href]="websiteUrl" target="_blank" rel="noopener noreferrer">Open website</a>
+                } @else {
+                  Not provided
+                }
+              </dd>
+            </div>
+            <div class="full">
+              <dt>Revenue</dt>
+              <dd>
+                {{
+                  current.revenue_amount
+                    ? current.revenue_currency +
+                      ' ' +
+                      current.revenue_amount +
+                      ' · ' +
+                      label(current.revenue_period)
+                    : 'Not provided'
+                }}
+              </dd>
+            </div>
+          </dl>
+        </section>
+        <section class="detail-card">
+          <h2>Social links</h2>
+          <div class="social-links">
+            @if (externalUrl(current.linkedin_url); as linkedinUrl) {
+              <a [href]="linkedinUrl" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+            }
+            @if (externalUrl(current.facebook_url); as facebookUrl) {
+              <a [href]="facebookUrl" target="_blank" rel="noopener noreferrer">Facebook</a>
+            }
+            @if (externalUrl(current.instagram_url); as instagramUrl) {
+              <a [href]="instagramUrl" target="_blank" rel="noopener noreferrer">Instagram</a>
+            }
+            @if (externalUrl(current.x_url); as xUrl) {
+              <a [href]="xUrl" target="_blank" rel="noopener noreferrer">X</a>
+            }
+            @if (externalUrl(current.github_url); as githubUrl) {
+              <a [href]="githubUrl" target="_blank" rel="noopener noreferrer">GitHub</a>
+            }
+            @if (!hasSafeSocial(current)) {
+              <span>None provided</span>
+            }
           </div>
-          <div>
-            <dt>Email status</dt>
-            <dd>
-              <span class="lead-badge">{{ label(current.email_status) }}</span>
-            </dd>
+        </section>
+        <section class="detail-card">
+          <h2>Notes & consent</h2>
+          <dl class="detail-grid">
+            <div>
+              <dt>Consent status</dt>
+              <dd>{{ label(current.consent_status) }}</dd>
+            </div>
+            <div>
+              <dt>Consent reference</dt>
+              <dd>{{ current.consent_reference || 'Not provided' }}</dd>
+            </div>
+            <div class="full">
+              <dt>Consent evidence</dt>
+              <dd class="preserve-lines">{{ current.consent_evidence || 'Not provided' }}</dd>
+            </div>
+            <div class="full">
+              <dt>Notes</dt>
+              <dd class="preserve-lines">{{ current.notes || 'No notes' }}</dd>
+            </div>
+          </dl>
+        </section>
+        @if (customerLifecycle(); as lifecycle) {
+          <section
+            class="detail-card conversion-result-card"
+            aria-labelledby="customer-lifecycle-title"
+          >
+            <div class="activity-card-header">
+              <div>
+                <p class="eyebrow">Customer lifecycle</p>
+                <h2 id="customer-lifecycle-title">Converted to customer</h2>
+              </div>
+              <a
+                class="secondary-button button-link"
+                [routerLink]="['/customers', lifecycle.customer.id]"
+              >
+                View customer
+              </a>
+            </div>
+            <dl class="detail-grid">
+              <div>
+                <dt>Customer</dt>
+                <dd>{{ lifecycle.customer.first_name }} {{ lifecycle.customer.last_name }}</dd>
+              </div>
+              <div>
+                <dt>Converted</dt>
+                <dd>{{ lifecycle.conversion.converted_at | date: 'medium' }}</dd>
+              </div>
+              <div>
+                <dt>Purchased service</dt>
+                <dd>{{ lifecycle.conversion.purchased_service }}</dd>
+              </div>
+              <div>
+                <dt>Conversion reference</dt>
+                <dd>{{ lifecycle.conversion.reference || 'Not provided' }}</dd>
+              </div>
+              <div>
+                <dt>Customer record</dt>
+                <dd>{{ label(lifecycle.conversion.duplicate_resolution) }}</dd>
+              </div>
+              <div>
+                <dt>Acquisition tasks</dt>
+                <dd>
+                  {{ label(lifecycle.conversion.pending_task_disposition) }} ·
+                  {{ lifecycle.conversion.affected_task_count }} affected
+                </dd>
+              </div>
+              <div class="full">
+                <dt>Conversion reason</dt>
+                <dd class="preserve-lines">{{ lifecycle.conversion.reason }}</dd>
+              </div>
+            </dl>
+            @if (conversionResult(); as result) {
+              <p class="conversion-message" role="status">
+                {{
+                  result.idempotent_replay
+                    ? 'Existing conversion returned.'
+                    : 'Conversion completed.'
+                }}
+                {{ result.conversion.cancelled_nurture_job_count }} pending nurture
+                {{ result.conversion.cancelled_nurture_job_count === 1 ? 'job was' : 'jobs were' }}
+                cancelled. No automatic message was sent.
+              </p>
+            }
+          </section>
+        } @else if (customerLifecycleLoading()) {
+          <section class="detail-card" aria-label="Customer lifecycle">
+            <div class="activity-state" role="status">Loading customer lifecycle…</div>
+          </section>
+        }
+        <section class="detail-card activity-card" aria-labelledby="activity-timeline-title">
+          <div class="activity-card-header">
+            <div>
+              <h2 id="activity-timeline-title">Activity timeline</h2>
+              <p>Times shown in {{ timezoneLabel }}.</p>
+            </div>
+            @if (auth.hasPermission(permissions.leadsUpdate)) {
+              <div class="activity-header-actions">
+                <button class="text-button" type="button" (click)="openRecordReply()">
+                  Record reply
+                </button>
+                <button class="text-button" type="button" (click)="openRecordBooking()">
+                  Record booking
+                </button>
+                <button class="secondary-button" type="button" (click)="openLogContact()">
+                  Log contact
+                </button>
+              </div>
+            }
           </div>
-          <div>
-            <dt>Phone</dt>
-            <dd>{{ current.phone || 'Not provided' }}</dd>
-          </div>
-          <div>
-            <dt>Location</dt>
-            <dd>
-              {{
-                current.city || current.state || country(current.country)
-                  ? (current.city || '') +
-                    (current.city && current.state ? ', ' : '') +
-                    (current.state || '') +
-                    ((current.city || current.state) && country(current.country) ? ', ' : '') +
-                    country(current.country)
-                  : 'Not provided'
-              }}
-            </dd>
-          </div>
-        </dl>
-      </section>
-      <section class="detail-card">
-        <h2>Company</h2>
-        <dl class="detail-grid">
-          <div>
-            <dt>Company</dt>
-            <dd>{{ current.company || 'Not provided' }}</dd>
-          </div>
-          <div>
-            <dt>Industry</dt>
-            <dd>{{ current.industry || 'Not provided' }}</dd>
-          </div>
-          <div>
-            <dt>Service requested</dt>
-            <dd>{{ current.service_requested || 'Not provided' }}</dd>
-          </div>
-          <div>
-            <dt>Company size</dt>
-            <dd>{{ label(current.company_size) }}</dd>
-          </div>
-          <div>
-            <dt>Website</dt>
-            <dd>
-              @if (externalUrl(current.company_website); as websiteUrl) {
-                <a [href]="websiteUrl" target="_blank" rel="noopener noreferrer">Open website</a>
-              } @else {
-                Not provided
+
+          @if (activityError()) {
+            <div class="activity-state activity-error" role="alert">
+              <span>{{ activityError() }}</span>
+              <button class="text-button" type="button" (click)="reloadActivities()">Retry</button>
+            </div>
+          }
+          @if (bookingError()) {
+            <div class="activity-state activity-error" role="alert">
+              <span>{{ bookingError() }}</span>
+              <button class="text-button" type="button" (click)="load()">Retry</button>
+            </div>
+          }
+          @if (assignmentHistoryError()) {
+            <div class="activity-state activity-error" role="alert">
+              <span>{{ assignmentHistoryError() }}</span>
+              <button class="text-button" type="button" (click)="load()">Retry</button>
+            </div>
+          }
+          @if (activityLoading() || bookingLoading() || assignmentHistoryLoading()) {
+            <div class="activity-state" role="status">Loading activity…</div>
+          } @else if (
+            !timelineEntries().length &&
+            !activityError() &&
+            !bookingError() &&
+            !assignmentHistoryError()
+          ) {
+            <div class="activity-empty">
+              <strong>No activity recorded yet</strong>
+              <p>
+                Calls, emails, replies, and notes logged here will appear in chronological order.
+              </p>
+            </div>
+          } @else {
+            <ol class="timeline activity-timeline">
+              @for (entry of timelineEntries(); track entry.id) {
+                <li
+                  [class.timeline-amendment]="
+                    entry.kind === 'activity' && entry.activity.is_amendment
+                  "
+                  [class.timeline-booking]="entry.kind === 'booking'"
+                  [class.timeline-assignment]="entry.kind === 'assignment'"
+                >
+                  @if (entry.kind === 'activity') {
+                    <article>
+                      <div class="activity-heading">
+                        <div>
+                          <strong>{{ activityTitle(entry.activity) }}</strong>
+                          <span
+                            class="activity-origin"
+                            [class.system-origin]="entry.activity.is_system"
+                          >
+                            {{
+                              entry.activity.is_system ? 'System generated' : 'Manually recorded'
+                            }}
+                          </span>
+                        </div>
+                        @if (
+                          auth.hasPermission(permissions.leadsUpdate) && !entry.activity.is_system
+                        ) {
+                          <button
+                            class="text-button"
+                            type="button"
+                            (click)="openCorrection(entry.activity)"
+                          >
+                            Correct
+                          </button>
+                        }
+                      </div>
+                      <div class="activity-tags" aria-label="Activity details">
+                        <span>{{ label(entry.activity.channel) }}</span>
+                        <span>{{ label(entry.activity.direction) }}</span>
+                        @if (entry.activity.message_status) {
+                          <span>{{ outboundStatusLabel(entry.activity.message_status) }}</span>
+                        }
+                      </div>
+                      @if (outboundMessage(entry.activity); as emailMessage) {
+                        <dl class="activity-metadata system-email-metadata">
+                          <div>
+                            <dt>Message</dt>
+                            <dd>{{ emailMessage.id }}</dd>
+                          </div>
+                          <div>
+                            <dt>Actor</dt>
+                            <dd>{{ userName(entry.activity.performed_by) }}</dd>
+                          </div>
+                          <div>
+                            <dt>Sender</dt>
+                            <dd>
+                              {{ emailMessage.sender.display_name }} &lt;{{
+                                emailMessage.sender.sender_email
+                              }}&gt;
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Purpose</dt>
+                            <dd>{{ label(emailMessage.purpose) }}</dd>
+                          </div>
+                          @if (emailMessage.contact_stage) {
+                            <div>
+                              <dt>Mail type</dt>
+                              <dd>{{ label(emailMessage.contact_stage) }}</dd>
+                            </div>
+                          }
+                        </dl>
+                        @if (emailMessage.events.length) {
+                          <ol class="message-event-summary" aria-label="Email message events">
+                            @for (
+                              messageEvent of emailMessage.events;
+                              track messageEvent.status + messageEvent.occurred_at
+                            ) {
+                              <li>
+                                <strong>{{ outboundStatusLabel(messageEvent.status) }}</strong>
+                                <span>{{ messageEvent.occurred_at | date: 'medium' }}</span>
+                                @if (messageEvent.safe_reason) {
+                                  <small>{{ messageEvent.safe_reason }}</small>
+                                }
+                              </li>
+                            }
+                          </ol>
+                        }
+                        @if (outboundFailureReason(emailMessage); as reason) {
+                          <p class="activity-copy system-email-failure">
+                            <b>Failure reason:</b> {{ reason }}
+                          </p>
+                        }
+                        @if (emailMessage.status === 'sent') {
+                          <p class="activity-copy">
+                            Accepted for sending by the SMTP provider; delivery and reading are not
+                            verified.
+                          </p>
+                        }
+                      }
+                      <dl class="activity-metadata">
+                        <div>
+                          <dt>Performed by</dt>
+                          <dd>{{ userName(entry.activity.performed_by) }}</dd>
+                        </div>
+                        <div>
+                          <dt>Occurred</dt>
+                          <dd>{{ entry.activity.occurred_at | date: 'medium' }}</dd>
+                        </div>
+                        <div>
+                          <dt>Recorded by</dt>
+                          <dd>{{ userName(entry.activity.recorded_by) }}</dd>
+                        </div>
+                        <div>
+                          <dt>Recorded</dt>
+                          <dd>{{ entry.activity.recorded_at | date: 'medium' }}</dd>
+                        </div>
+                      </dl>
+                      @if (entry.activity.outcome) {
+                        <p class="activity-copy"><b>Outcome:</b> {{ entry.activity.outcome }}</p>
+                      }
+                      @if (entry.activity.notes) {
+                        <p class="activity-copy preserve-lines">
+                          <b>Notes:</b> {{ entry.activity.notes }}
+                        </p>
+                      }
+                      @if (entry.activity.amendment_reason) {
+                        <p class="amendment-reason">
+                          <b>Correction reason:</b> {{ entry.activity.amendment_reason }}
+                        </p>
+                      }
+                    </article>
+                  } @else if (entry.kind === 'booking') {
+                    <article>
+                      <div class="activity-heading">
+                        <div>
+                          <strong>{{ bookingTitle(entry.event) }}</strong>
+                          <span class="activity-origin">
+                            {{
+                              entry.event.event_type === 'created' &&
+                              entry.booking.provider_verified
+                                ? 'Provider verified'
+                                : 'Manually recorded'
+                            }}
+                          </span>
+                        </div>
+                        @if (entry.current && canModifyBooking(entry.booking)) {
+                          <div class="booking-actions">
+                            <button
+                              class="text-button"
+                              type="button"
+                              (click)="openReschedule(entry.booking)"
+                            >
+                              Reschedule
+                            </button>
+                            <button
+                              class="text-button danger-text"
+                              type="button"
+                              (click)="openCancelBooking(entry.booking)"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        }
+                      </div>
+                      <div class="activity-tags" aria-label="Booking details">
+                        <span>Booking</span>
+                        <span>{{ label(entry.event.new_status) }}</span>
+                      </div>
+                      <dl class="activity-metadata">
+                        <div>
+                          <dt>Scheduled</dt>
+                          <dd>
+                            {{
+                              formatScheduled(
+                                entry.event.new_scheduled_at,
+                                entry.event.new_timezone
+                              )
+                            }}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Timezone</dt>
+                          <dd>{{ entry.event.new_timezone }}</dd>
+                        </div>
+                        <div>
+                          <dt>Recorded by</dt>
+                          <dd>{{ userName(entry.event.recorded_by) }}</dd>
+                        </div>
+                        <div>
+                          <dt>Recorded</dt>
+                          <dd>{{ entry.event.recorded_at | date: 'medium' }}</dd>
+                        </div>
+                      </dl>
+                      <p class="activity-copy">
+                        <b>Responsible:</b> {{ userName(entry.booking.responsible_user_id) }}
+                      </p>
+                      @if (
+                        entry.event.event_type === 'rescheduled' &&
+                        entry.event.previous_scheduled_at &&
+                        entry.event.previous_timezone
+                      ) {
+                        <p class="activity-copy">
+                          <b>Previous schedule:</b>
+                          {{
+                            formatScheduled(
+                              entry.event.previous_scheduled_at,
+                              entry.event.previous_timezone
+                            )
+                          }}
+                          ({{ entry.event.previous_timezone }})
+                        </p>
+                      }
+                      @if (entry.event.notes) {
+                        <p class="activity-copy preserve-lines">
+                          <b>Notes:</b> {{ entry.event.notes }}
+                        </p>
+                      }
+                    </article>
+                  } @else {
+                    <article>
+                      <div class="activity-heading">
+                        <div>
+                          <strong>Responsibility transferred</strong>
+                          <span class="activity-origin">Assignment</span>
+                        </div>
+                      </div>
+                      <div class="assignment-route" aria-label="Assignment change">
+                        <span>{{ assigneeName(entry.assignment.previous_assignee_id) }}</span>
+                        <b aria-hidden="true">→</b>
+                        <span>{{ assigneeName(entry.assignment.new_assignee_id) }}</span>
+                      </div>
+                      <dl class="activity-metadata">
+                        <div>
+                          <dt>Changed by</dt>
+                          <dd>{{ userName(entry.assignment.actor_user_id) }}</dd>
+                        </div>
+                        <div>
+                          <dt>Changed</dt>
+                          <dd>{{ entry.assignment.assigned_at | date: 'medium' }}</dd>
+                        </div>
+                        <div>
+                          <dt>Pending tasks</dt>
+                          <dd>{{ taskDispositionLabel(entry.assignment.task_disposition) }}</dd>
+                        </div>
+                        <div>
+                          <dt>Affected tasks</dt>
+                          <dd>{{ entry.assignment.affected_task_count }}</dd>
+                        </div>
+                      </dl>
+                      <p class="activity-copy preserve-lines">
+                        <b>Reason:</b> {{ entry.assignment.reason }}
+                      </p>
+                    </article>
+                  }
+                </li>
               }
-            </dd>
-          </div>
-          <div class="full">
-            <dt>Revenue</dt>
-            <dd>
-              {{
-                current.revenue_amount
-                  ? current.revenue_currency +
-                    ' ' +
-                    current.revenue_amount +
-                    ' · ' +
-                    label(current.revenue_period)
-                  : 'Not provided'
-              }}
-            </dd>
-          </div>
-        </dl>
-      </section>
-      <section class="detail-card">
-        <h2>Social links</h2>
-        <div class="social-links">
-          @if (externalUrl(current.linkedin_url); as linkedinUrl) {
-            <a [href]="linkedinUrl" target="_blank" rel="noopener noreferrer">LinkedIn</a>
+            </ol>
+            <nav class="lead-pagination activity-pagination" aria-label="Activity timeline pages">
+              <span>
+                Page {{ activityPage() }} of {{ activityPageCount() }} · {{ activityTotal() }}
+                {{ activityTotal() === 1 ? 'entry' : 'entries' }}
+              </span>
+              <div>
+                <button
+                  type="button"
+                  [disabled]="activityPage() === 1 || activityLoading()"
+                  (click)="loadActivities(activityPage() - 1)"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  [disabled]="activityPage() === activityPageCount() || activityLoading()"
+                  (click)="loadActivities(activityPage() + 1)"
+                >
+                  Next
+                </button>
+              </div>
+            </nav>
           }
-          @if (externalUrl(current.facebook_url); as facebookUrl) {
-            <a [href]="facebookUrl" target="_blank" rel="noopener noreferrer">Facebook</a>
-          }
-          @if (externalUrl(current.instagram_url); as instagramUrl) {
-            <a [href]="instagramUrl" target="_blank" rel="noopener noreferrer">Instagram</a>
-          }
-          @if (externalUrl(current.x_url); as xUrl) {
-            <a [href]="xUrl" target="_blank" rel="noopener noreferrer">X</a>
-          }
-          @if (externalUrl(current.github_url); as githubUrl) {
-            <a [href]="githubUrl" target="_blank" rel="noopener noreferrer">GitHub</a>
-          }
-          @if (!hasSafeSocial(current)) {
-            <span>None provided</span>
-          }
-        </div>
-      </section>
-      <section class="detail-card">
-        <h2>Notes & consent</h2>
-        <dl class="detail-grid">
-          <div>
-            <dt>Consent status</dt>
-            <dd>{{ label(current.consent_status) }}</dd>
-          </div>
-          <div>
-            <dt>Consent reference</dt>
-            <dd>{{ current.consent_reference || 'Not provided' }}</dd>
-          </div>
-          <div class="full">
-            <dt>Consent evidence</dt>
-            <dd class="preserve-lines">{{ current.consent_evidence || 'Not provided' }}</dd>
-          </div>
-          <div class="full">
-            <dt>Notes</dt>
-            <dd class="preserve-lines">{{ current.notes || 'No notes' }}</dd>
-          </div>
-        </dl>
-      </section>
-    </div>
-    <aside class="detail-side">
-      <section class="detail-card">
-        <h2>Internal handling</h2>
-        <dl>
-          <div>
-            <dt>Status</dt>
-            <dd>
-              <span class="lead-badge status-{{ current.status }}">{{
-                label(current.status)
-              }}</span>
-            </dd>
-          </div>
-          <div>
-            <dt>Source</dt>
-            <dd>{{ label(current.source) }}</dd>
-          </div>
-          <div>
-            <dt>Assignee</dt>
-            <dd>{{ current.assigned_user_id || 'Unassigned' }}</dd>
-          </div>
-          <div>
-            <dt>Row version</dt>
-            <dd>{{ current.row_version }}</dd>
-          </div>
-        </dl>
-        @if (auth.hasPermission(permissions.leadsStatus)) {
-          <div class="status-transition">
-            <h3>Change lifecycle status</h3>
-            @if (nextStatuses().length) {
+        </section>
+      </div>
+      <aside class="detail-side">
+        <section class="detail-card">
+          <h2>Internal handling</h2>
+          <dl>
+            <div>
+              <dt>Status</dt>
+              <dd>
+                <span class="lead-badge status-{{ current.status }}">{{
+                  label(current.status)
+                }}</span>
+              </dd>
+            </div>
+            <div>
+              <dt>Source</dt>
+              <dd>{{ label(current.source) }}</dd>
+            </div>
+            <div>
+              <dt>Priority</dt>
+              <dd>
+                <span class="lead-badge priority-{{ current.priority }}">{{
+                  label(current.priority)
+                }}</span>
+              </dd>
+            </div>
+            <div>
+              <dt>Assignee</dt>
+              <dd>{{ assigneeName(current.assigned_user_id) }}</dd>
+            </div>
+            <div>
+              <dt>Row version</dt>
+              <dd>{{ current.row_version }}</dd>
+            </div>
+          </dl>
+          @if (auth.hasPermission(permissions.leadsUpdate)) {
+            <div class="status-transition">
+              <h3>Change priority</h3>
               <label
-                >Next status<select [formControl]="statusControl">
-                  <option value="">Select transition</option>
-                  @for (status of nextStatuses(); track status) {
-                    <option [value]="status">{{ label(status) }}</option>
+                >Priority<select [formControl]="priorityControl">
+                  @for (priority of priorities; track priority) {
+                    <option [value]="priority">{{ label(priority) }}</option>
                   }
                 </select></label
               ><button
                 class="primary-button"
                 type="button"
-                [disabled]="!statusControl.value || savingStatus()"
-                (click)="updateStatus()"
+                [disabled]="priorityControl.value === current.priority || savingPriority()"
+                (click)="updatePriority()"
               >
-                {{ savingStatus() ? 'Updating…' : 'Update status' }}
+                {{ savingPriority() ? 'Updating…' : 'Update priority' }}
               </button>
-            } @else {
-              <p>Converted is a terminal status.</p>
-            }
-          </div>
+            </div>
+          }
+          @if (canForwardLead()) {
+            <div class="status-transition">
+              <h3>Responsibility</h3>
+              <p>Forward this lead by transferring responsibility to another eligible user.</p>
+              <button class="secondary-button" type="button" (click)="openAssignment()">
+                Forward / reassign
+              </button>
+            </div>
+          }
+          @if (auth.hasPermission(permissions.leadsStatus)) {
+            <div class="status-transition">
+              <h3>Change lifecycle status</h3>
+              @if (nextStatuses().length) {
+                <label
+                  >Next status<select [formControl]="statusControl">
+                    <option value="">Select transition</option>
+                    @for (status of nextStatuses(); track status) {
+                      <option [value]="status">{{ label(status) }}</option>
+                    }
+                  </select></label
+                ><button
+                  class="primary-button"
+                  type="button"
+                  [disabled]="!statusControl.value || savingStatus()"
+                  (click)="updateStatus()"
+                >
+                  {{ savingStatus() ? 'Updating…' : 'Update status' }}
+                </button>
+              } @else {
+                <p>Converted is a terminal status.</p>
+              }
+            </div>
+          }
+        </section>
+        <section class="detail-card">
+          <h2>Lead audit</h2>
+          <ol class="timeline">
+            <li>
+              <span>Created</span><strong>{{ current.created_at | date: 'medium' }}</strong
+              ><small>by {{ current.created_by }}</small>
+            </li>
+            <li>
+              <span>Last updated</span><strong>{{ current.updated_at | date: 'medium' }}</strong
+              ><small>by {{ current.updated_by }}</small>
+            </li>
+          </ol>
+          <p class="section-help">
+            These are lead-record audit timestamps. Contact activity and corrections appear in the
+            timeline.
+          </p>
+        </section>
+      </aside>
+    </div>
+  } @else {
+    <section class="lead-tasks-tab" aria-labelledby="lead-tasks-title">
+      <div class="lead-tasks-header">
+        <div>
+          <h2 id="lead-tasks-title">Lead tasks</h2>
+          <p>
+            {{
+              current.status === 'converted'
+                ? 'Create and manage authorized customer-service work.'
+                : 'Create and manage acquisition follow-ups for ' +
+                  current.first_name +
+                  ' ' +
+                  current.last_name +
+                  '.'
+            }}
+          </p>
+        </div>
+        @if (auth.hasPermission(permissions.leadsUpdate)) {
+          <button class="primary-button" type="button" (click)="openFollowUp()">
+            {{
+              current.status === 'converted' ? 'Create customer-service task' : 'Create follow-up'
+            }}
+          </button>
         }
-      </section>
-      <section class="detail-card">
-        <h2>Activity timeline</h2>
-        <ol class="timeline">
-          <li>
-            <span>Created</span><strong>{{ current.created_at | date: 'medium' }}</strong
-            ><small>by {{ current.created_by }}</small>
-          </li>
-          <li>
-            <span>Last updated</span><strong>{{ current.updated_at | date: 'medium' }}</strong
-            ><small>by {{ current.updated_by }}</small>
-          </li>
-        </ol>
-        <p class="section-help">
-          The current API exposes audit timestamps only; event history is retained by the backend
-          but has no lead timeline endpoint.
+      </div>
+      <app-task-manager
+        [leadId]="current.id"
+        [leadStatus]="current.status"
+        view="lead"
+        [createRequest]="followUpRequest()"
+        [refreshRequest]="taskRefreshRequest()"
+      />
+    </section>
+  }
+}
+
+@if (lead(); as current) {
+  @if (conversionModalOpen()) {
+    <div class="lead-modal-backdrop">
+      <section
+        class="lead-modal activity-modal conversion-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="conversion-modal-title"
+      >
+        <p class="eyebrow">Explicit lifecycle change</p>
+        <h2 id="conversion-modal-title">Convert {{ current.first_name }} to a customer?</h2>
+        <p class="activity-disclaimer">
+          This creates or links a customer relationship and stops lead-acquisition automation. It
+          does not send an email, SMS, or other automatic message.
         </p>
+        @if (conversionError()) {
+          <p class="lead-alert" role="alert">{{ conversionError() }}</p>
+        }
+        <form class="activity-form" [formGroup]="conversionForm" (ngSubmit)="saveConversion()">
+          <div class="activity-form-grid">
+            <label>
+              Purchased service
+              <input formControlName="purchasedService" maxlength="200" />
+              @if (conversionFieldError('purchased_service'); as error) {
+                <small class="field-error">{{ error }}</small>
+              }
+            </label>
+            <label>
+              Conversion reference
+              <input
+                formControlName="reference"
+                maxlength="255"
+                placeholder="Order or agreement ID"
+              />
+              @if (conversionFieldError('reference'); as error) {
+                <small class="field-error">{{ error }}</small>
+              }
+            </label>
+            <label class="full">
+              Conversion reason
+              <textarea
+                formControlName="reason"
+                maxlength="1000"
+                rows="3"
+                placeholder="Why is this lead being converted?"
+              ></textarea>
+              @if (conversionFieldError('reason'); as error) {
+                <small class="field-error">{{ error }}</small>
+              }
+            </label>
+            <fieldset class="full assignment-options">
+              <legend>Customer record</legend>
+              <label>
+                <input type="radio" formControlName="duplicateResolution" value="create_new" />
+                <span><b>Create new</b><small>Create a customer from this lead.</small></span>
+              </label>
+              <label>
+                <input type="radio" formControlName="duplicateResolution" value="link_existing" />
+                <span
+                  ><b>Link existing</b
+                  ><small>Attach this conversion to an existing customer.</small></span
+                >
+              </label>
+            </fieldset>
+            @if (conversionForm.controls.duplicateResolution.value === 'link_existing') {
+              <label class="full">
+                Existing customer
+                <select formControlName="existingCustomerId">
+                  <option value="" disabled>
+                    {{ customerOptionsLoading() ? 'Loading customers…' : 'Select a customer' }}
+                  </option>
+                  @if (
+                    conversionForm.controls.existingCustomerId.value && !customerOptions().length
+                  ) {
+                    <option [value]="conversionForm.controls.existingCustomerId.value">
+                      Existing customer · {{ conversionForm.controls.existingCustomerId.value }}
+                    </option>
+                  }
+                  @for (customer of customerOptions(); track customer.id) {
+                    <option [value]="customer.id">
+                      {{ customer.first_name }} {{ customer.last_name }} · {{ customer.email }}
+                    </option>
+                  }
+                </select>
+                @if (!auth.hasPermission(permissions.customersView)) {
+                  <small class="field-help">
+                    Customer browsing is unavailable for this role; duplicate detection can still
+                    offer an eligible link.
+                  </small>
+                }
+                @if (conversionFieldError('existing_customer_id'); as error) {
+                  <small class="field-error">{{ error }}</small>
+                }
+              </label>
+            }
+            <fieldset class="full assignment-options">
+              <legend>Open lead-acquisition tasks</legend>
+              <label>
+                <input type="radio" formControlName="pendingTaskDisposition" value="cancel" />
+                <span><b>Cancel</b><small>Cancel pending contact and follow-up tasks.</small></span>
+              </label>
+              <label>
+                <input type="radio" formControlName="pendingTaskDisposition" value="retain" />
+                <span><b>Retain</b><small>Keep intentional acquisition tasks open.</small></span>
+              </label>
+            </fieldset>
+            <label class="full">
+              Pending-task reason
+              <textarea formControlName="pendingTaskReason" maxlength="1000" rows="3"></textarea>
+              @if (conversionFieldError('pending_task_reason'); as error) {
+                <small class="field-error">{{ error }}</small>
+              }
+            </label>
+            <label class="full confirmation-check">
+              <input type="checkbox" formControlName="confirmed" />
+              <span>
+                I confirm this lifecycle change, the customer record choice, and the pending-task
+                disposition.
+              </span>
+              @if (conversionFieldError('confirmed'); as error) {
+                <small class="field-error">{{ error }}</small>
+              }
+            </label>
+          </div>
+          <div class="lead-form-actions">
+            <button
+              class="secondary-button"
+              type="button"
+              [disabled]="conversionSaving()"
+              (click)="closeConversion()"
+            >
+              Keep as lead
+            </button>
+            <button class="primary-button" type="submit" [disabled]="conversionSaving()">
+              {{ conversionSaving() ? 'Converting…' : 'Confirm conversion' }}
+            </button>
+          </div>
+        </form>
       </section>
-    </aside>
+    </div>
+  }
+}
+
+@if (lead(); as current) {
+  @if (assignmentModalOpen()) {
+    <div class="lead-modal-backdrop">
+      <section
+        class="lead-modal activity-modal assignment-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="assignment-modal-title"
+      >
+        <p class="eyebrow">Responsibility transfer</p>
+        <h2 id="assignment-modal-title">Forward / reassign lead</h2>
+        <p class="activity-disclaimer">
+          Forward means transferring responsibility for this lead. It does not forward or send an
+          email.
+        </p>
+        @if (assignmentError()) {
+          <p class="lead-alert" role="alert">{{ assignmentError() }}</p>
+        }
+        <form class="activity-form" [formGroup]="assignmentForm" (ngSubmit)="saveAssignment()">
+          <div class="assignment-comparison">
+            <div>
+              <span>Before</span>
+              <strong>{{ assigneeName(current.assigned_user_id) }}</strong>
+            </div>
+            <b aria-hidden="true">→</b>
+            <div>
+              <span>After</span>
+              <strong>{{ assigneeName(assignmentForm.controls.newAssigneeId.value) }}</strong>
+            </div>
+          </div>
+          <div class="activity-form-grid">
+            <label class="full">
+              New assignee
+              <select formControlName="newAssigneeId">
+                <option value="" disabled>
+                  {{ performerUsersLoading() ? 'Loading eligible users…' : 'Select eligible user' }}
+                </option>
+                @for (user of performerUsers(); track user.id) {
+                  @if (user.id !== current.assigned_user_id) {
+                    <option [value]="user.id">
+                      {{ user.display_name }} · {{ user.role_name }}
+                    </option>
+                  }
+                }
+              </select>
+              <small class="field-help"
+                >Only eligible users returned by the workspace are shown.</small
+              >
+              @if (assignmentFieldError('assigned_user_id'); as error) {
+                <small class="field-error">{{ error }}</small>
+              }
+            </label>
+            <label class="full">
+              Reason
+              <textarea
+                formControlName="reason"
+                maxlength="1000"
+                rows="4"
+                placeholder="Why is responsibility being transferred?"
+              ></textarea>
+              @if (assignmentFieldError('assignment_reason'); as error) {
+                <small class="field-error">{{ error }}</small>
+              }
+            </label>
+            <fieldset class="full assignment-options">
+              <legend>Pending tasks</legend>
+              <label>
+                <input type="radio" formControlName="taskDisposition" value="transfer" />
+                <span
+                  ><b>Transfer</b><small>Move all pending tasks to the new assignee.</small></span
+                >
+              </label>
+              <label>
+                <input type="radio" formControlName="taskDisposition" value="retain" />
+                <span
+                  ><b>Retain</b><small>Keep pending tasks with their current owners.</small></span
+                >
+              </label>
+              <label>
+                <input type="radio" formControlName="taskDisposition" value="cancel" />
+                <span><b>Cancel</b><small>Cancel all pending tasks for this lead.</small></span>
+              </label>
+            </fieldset>
+          </div>
+          <div class="lead-form-actions">
+            <button
+              class="secondary-button"
+              type="button"
+              [disabled]="assignmentSaving()"
+              (click)="closeAssignment()"
+            >
+              Keep current assignee
+            </button>
+            <button
+              class="primary-button"
+              type="submit"
+              [disabled]="assignmentSaving() || performerUsersLoading()"
+            >
+              {{ assignmentSaving() ? 'Transferring…' : 'Transfer responsibility' }}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  }
+}
+
+@if (replyModalOpen()) {
+  <div class="lead-modal-backdrop">
+    <section
+      class="lead-modal activity-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reply-modal-title"
+    >
+      <p class="eyebrow">Manual reply</p>
+      <h2 id="reply-modal-title">Record reply</h2>
+      <p class="activity-disclaimer">
+        This records a reply that happened elsewhere. It does not send a message or change the
+        lead’s status.
+      </p>
+      @if (activityError()) {
+        <p class="lead-alert" role="alert">{{ activityError() }}</p>
+      }
+      <form class="activity-form" [formGroup]="replyForm" (ngSubmit)="saveReply()">
+        <div class="activity-form-grid">
+          <label>
+            Channel
+            <select formControlName="channel">
+              @for (channel of activityChannels; track channel) {
+                <option [value]="channel">{{ label(channel) }}</option>
+              }
+            </select>
+            @if (replyFieldError('channel'); as error) {
+              <small class="field-error">{{ error }}</small>
+            }
+          </label>
+          <label>
+            Occurred at
+            <input type="datetime-local" formControlName="occurredAt" />
+            <small class="field-help"
+              >{{ timezoneLabel }}; submitted with timezone information.</small
+            >
+            @if (replyFieldError('occurred_at'); as error) {
+              <small class="field-error">{{ error }}</small>
+            }
+          </label>
+          <label class="full">
+            Related outbound activity
+            <select formControlName="relatedActivityId">
+              <option value="" disabled>
+                {{ replyOptionsLoading() ? 'Loading outbound activity…' : 'Select an activity' }}
+              </option>
+              @for (activity of replyActivities(); track activity.id) {
+                <option [value]="activity.id">
+                  {{ activityTitle(activity) }} · {{ activity.occurred_at | date: 'medium' }}
+                </option>
+              }
+            </select>
+            @if (!replyOptionsLoading() && !replyActivities().length) {
+              <small class="field-error">Log an outbound contact before recording its reply.</small>
+            }
+            @if (replyFieldError('related_outbound_activity_id'); as error) {
+              <small class="field-error">{{ error }}</small>
+            }
+          </label>
+          <label class="full">
+            Reply summary
+            <textarea
+              formControlName="summary"
+              maxlength="10000"
+              rows="5"
+              placeholder="What did the lead say?"
+            ></textarea>
+            @if (replyFieldError('summary'); as error) {
+              <small class="field-error">{{ error }}</small>
+            }
+          </label>
+        </div>
+        <div class="lead-form-actions">
+          <button
+            class="secondary-button"
+            type="button"
+            [disabled]="replySaving()"
+            (click)="closeReplyModal()"
+          >
+            Cancel
+          </button>
+          <button
+            class="primary-button"
+            type="submit"
+            [disabled]="replySaving() || replyOptionsLoading() || !replyActivities().length"
+          >
+            {{ replySaving() ? 'Saving…' : 'Record reply' }}
+          </button>
+        </div>
+      </form>
+    </section>
+  </div>
+}
+
+@if (bookingModalOpen()) {
+  <div class="lead-modal-backdrop">
+    <section
+      class="lead-modal activity-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="booking-modal-title"
+    >
+      <p class="eyebrow">Manual booking</p>
+      <h2 id="booking-modal-title">
+        {{ reschedulingBooking() ? 'Reschedule booking' : 'Record booking' }}
+      </h2>
+      <p class="activity-disclaimer">
+        This records a booking only. It does not contact the customer or change the lead’s status.
+      </p>
+      @if (bookingError()) {
+        <p class="lead-alert" role="alert">{{ bookingError() }}</p>
+      }
+      <form class="activity-form" [formGroup]="bookingForm" (ngSubmit)="saveBooking()">
+        <div class="activity-form-grid">
+          <label>
+            Scheduled at
+            <input type="datetime-local" formControlName="scheduledAt" />
+            @if (bookingFieldError('scheduled_at'); as error) {
+              <small class="field-error">{{ error }}</small>
+            }
+          </label>
+          <label>
+            Timezone
+            <input type="text" formControlName="timezone" readonly />
+            <small class="field-help">Scheduling uses your current IANA timezone.</small>
+            @if (bookingFieldError('timezone'); as error) {
+              <small class="field-error">{{ error }}</small>
+            }
+          </label>
+          @if (!reschedulingBooking()) {
+            <label>
+              Initial status
+              <select formControlName="status">
+                <option value="scheduled">Scheduled</option>
+                <option value="confirmed">Confirmed</option>
+              </select>
+            </label>
+            <label>
+              Responsible user
+              @if (canAssignBooking() && canChoosePerformer()) {
+                <select formControlName="responsibleUserId">
+                  @if (auth.user(); as currentUser) {
+                    <option [value]="currentUser.id">{{ currentUser.name }} (you)</option>
+                  }
+                  @for (user of performerUsers(); track user.id) {
+                    @if (user.id !== auth.user()?.id) {
+                      <option [value]="user.id">{{ user.display_name }}</option>
+                    }
+                  }
+                </select>
+              } @else if (canAssignBooking()) {
+                <input
+                  type="text"
+                  formControlName="responsibleUserId"
+                  placeholder="Workspace user ID"
+                />
+              } @else {
+                <span class="performer-readonly">
+                  {{ userName(bookingForm.controls.responsibleUserId.value) }} (you)
+                </span>
+              }
+              @if (bookingFieldError('responsible_user_id'); as error) {
+                <small class="field-error">{{ error }}</small>
+              }
+            </label>
+          }
+          <label class="full">
+            Notes
+            <textarea
+              formControlName="notes"
+              maxlength="10000"
+              rows="4"
+              placeholder="Add booking context"
+            ></textarea>
+            @if (bookingFieldError('notes'); as error) {
+              <small class="field-error">{{ error }}</small>
+            }
+          </label>
+        </div>
+        <div class="lead-form-actions">
+          <button
+            class="secondary-button"
+            type="button"
+            [disabled]="bookingSaving()"
+            (click)="closeBookingModal()"
+          >
+            Cancel
+          </button>
+          <button class="primary-button" type="submit" [disabled]="bookingSaving()">
+            {{
+              bookingSaving()
+                ? 'Saving…'
+                : reschedulingBooking()
+                  ? 'Reschedule booking'
+                  : 'Record booking'
+            }}
+          </button>
+        </div>
+      </form>
+    </section>
+  </div>
+}
+
+@if (cancellingBooking(); as booking) {
+  <div class="lead-modal-backdrop">
+    <section
+      class="lead-modal"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="cancel-booking-title"
+    >
+      <p class="eyebrow">Booking change</p>
+      <h2 id="cancel-booking-title">Cancel this booking?</h2>
+      <p>
+        Scheduled for {{ formatScheduled(booking.scheduled_at, booking.timezone) }} ({{
+          booking.timezone
+        }}). The cancellation is recorded in booking history and does not change the lead’s status.
+      </p>
+      @if (bookingError()) {
+        <p class="lead-alert" role="alert">{{ bookingError() }}</p>
+      }
+      <label class="modal-field">
+        Cancellation notes
+        <textarea [formControl]="cancellationNotes" maxlength="10000" rows="3"></textarea>
+      </label>
+      <div class="lead-form-actions">
+        <button
+          class="secondary-button"
+          type="button"
+          [disabled]="bookingSaving()"
+          (click)="closeCancelBooking()"
+        >
+          Keep booking
+        </button>
+        <button
+          class="danger-button"
+          type="button"
+          [disabled]="bookingSaving()"
+          (click)="cancelBooking()"
+        >
+          {{ bookingSaving() ? 'Cancelling…' : 'Cancel booking' }}
+        </button>
+      </div>
+    </section>
+  </div>
+}
+
+@if (activityModalOpen()) {
+  <div class="lead-modal-backdrop">
+    <section
+      class="lead-modal activity-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="activity-modal-title"
+    >
+      <p class="eyebrow">{{ correctingActivity() ? 'Activity correction' : 'Manual activity' }}</p>
+      <h2 id="activity-modal-title">
+        {{ correctingActivity() ? 'Correct activity' : 'Log contact' }}
+      </h2>
+      <p class="activity-disclaimer">
+        This records an interaction only. It does not send an email, SMS, WhatsApp message, or make
+        a phone call.
+      </p>
+      @if (correctingActivity()) {
+        <p class="correction-note">
+          Corrections are appended to the timeline; the original record remains unchanged.
+        </p>
+      }
+      @if (activityError()) {
+        <p class="lead-alert" role="alert">{{ activityError() }}</p>
+      }
+
+      <form class="activity-form" [formGroup]="activityForm" (ngSubmit)="saveActivity()">
+        <div class="activity-form-grid">
+          <label>
+            Activity type
+            <select formControlName="activityType">
+              @for (type of activityTypes; track type) {
+                <option [value]="type">{{ label(type) }}</option>
+              }
+            </select>
+            @if (activityFieldError('activity_type'); as error) {
+              <small class="field-error">{{ error }}</small>
+            }
+          </label>
+          <label>
+            Channel
+            <select formControlName="channel">
+              @for (channel of activityChannels; track channel) {
+                <option [value]="channel">{{ label(channel) }}</option>
+              }
+            </select>
+            @if (activityFieldError('channel'); as error) {
+              <small class="field-error">{{ error }}</small>
+            }
+          </label>
+          <label>
+            Direction
+            <select formControlName="direction" aria-describedby="activity-direction-help">
+              <option value="outbound">Outbound</option>
+              <option value="inbound">Inbound</option>
+              <option value="internal">Internal</option>
+            </select>
+            <small id="activity-direction-help" class="field-help"
+              >Set from the activity type.</small
+            >
+            @if (activityFieldError('direction'); as error) {
+              <small class="field-error">{{ error }}</small>
+            }
+          </label>
+          <label>
+            Occurred at
+            <input type="datetime-local" formControlName="occurredAt" />
+            <small class="field-help"
+              >{{ timezoneLabel }}; submitted with timezone information.</small
+            >
+            @if (activityFieldError('occurred_at'); as error) {
+              <small class="field-error">{{ error }}</small>
+            }
+          </label>
+          <label class="full">
+            Performed by
+            @if (canChoosePerformer()) {
+              <select formControlName="performedBy">
+                @if (correctingActivity()) {
+                  <option value="">Not specified</option>
+                }
+                @if (auth.user(); as currentUser) {
+                  <option [value]="currentUser.id">{{ currentUser.name }} (you)</option>
+                }
+                @if (performerUsersLoading()) {
+                  <option disabled>Loading other users…</option>
+                }
+                @for (user of performerUsers(); track user.id) {
+                  @if (user.id !== auth.user()?.id) {
+                    <option [value]="user.id">{{ user.display_name }}</option>
+                  }
+                }
+              </select>
+              <small class="field-help"
+                >Only active workspace members returned by the backend are available.</small
+              >
+            } @else {
+              <span class="performer-readonly">
+                {{ userName(activityForm.controls.performedBy.value || null) }}
+                {{ activityForm.controls.performedBy.value === auth.user()?.id ? '(you)' : '' }}
+              </span>
+            }
+            @if (activityFieldError('performed_by'); as error) {
+              <small class="field-error">{{ error }}</small>
+            }
+          </label>
+          <label class="full">
+            Outcome
+            <input
+              type="text"
+              formControlName="outcome"
+              maxlength="500"
+              placeholder="For example: requested a proposal"
+            />
+            @if (activityFieldError('outcome'); as error) {
+              <small class="field-error">{{ error }}</small>
+            }
+          </label>
+          <label class="full">
+            Notes {{ activityForm.controls.activityType.value === 'note' ? '(required)' : '' }}
+            <textarea
+              formControlName="notes"
+              maxlength="10000"
+              rows="4"
+              placeholder="Add useful context about the interaction"
+            ></textarea>
+            @if (activityFieldError('notes'); as error) {
+              <small class="field-error">{{ error }}</small>
+            }
+          </label>
+          @if (correctingActivity()) {
+            <label class="full">
+              Reason for correction
+              <textarea
+                formControlName="amendmentReason"
+                maxlength="1000"
+                rows="2"
+                placeholder="Explain what was incorrect and why"
+              ></textarea>
+              @if (activityFieldError('amendment_reason'); as error) {
+                <small class="field-error">{{ error }}</small>
+              }
+            </label>
+          }
+        </div>
+        <div class="lead-form-actions">
+          <button
+            class="secondary-button"
+            type="button"
+            [disabled]="activitySaving()"
+            (click)="closeActivityModal()"
+          >
+            Cancel
+          </button>
+          <button class="primary-button" type="submit" [disabled]="activitySaving()">
+            {{
+              activitySaving()
+                ? 'Saving…'
+                : correctingActivity()
+                  ? 'Record correction'
+                  : 'Log contact'
+            }}
+          </button>
+        </div>
+      </form>
+    </section>
   </div>
 }
 

@@ -1,0 +1,16 @@
+<label class="editor-label" [for]="editorId">{{ label }}</label>
+<div class="NgxEditor__Wrapper" [class.disabled]="disabled">
+  <ngx-editor-menu [editor]="editor" [toolbar]="toolbar" [disabled]="disabled" />
+  <ngx-editor
+    [editor]="editor"
+    [ngModel]="html"
+    (ngModelChange)="changed($event)"
+    [ngModelOptions]="{ standalone: true }"
+    [disabled]="disabled"
+    [placeholder]="placeholder"
+    outputFormat="html"
+    [attr.id]="editorId"
+    [attr.aria-label]="label"
+    (focusOut)="touched()"
+  />
+</div>

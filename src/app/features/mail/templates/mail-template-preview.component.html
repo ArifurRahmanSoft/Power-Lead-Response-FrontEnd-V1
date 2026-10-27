@@ -1,0 +1,110 @@
+<section class="preview-panel" aria-labelledby="preview-heading">
+  <header>
+    <div>
+      <p class="eyebrow">Backend-rendered</p>
+      <h2 id="preview-heading">Preview</h2>
+    </div>
+    <span class="no-send">Preview only — no email is sent</span>
+  </header>
+
+  <div class="preview-controls">
+    <fieldset>
+      <legend>Preview data</legend>
+      <label
+        ><input type="radio" name="preview-mode" value="sample" [(ngModel)]="mode" /> Sample
+        values</label
+      >
+      <label
+        ><input type="radio" name="preview-mode" value="lead" [(ngModel)]="mode" /> Authorized
+        lead</label
+      >
+    </fieldset>
+
+    @if (mode === 'lead') {
+      <label class="control-label" for="preview-lead">Lead</label>
+      <select id="preview-lead" [(ngModel)]="leadId">
+        <option value="">Choose a lead</option>
+        @for (lead of leads(); track lead.id) {
+          <option [value]="lead.id">
+            {{ lead.first_name }} {{ lead.last_name }} — {{ lead.email }}
+          </option>
+        }
+      </select>
+      @if (!leads().length) {
+        <p class="help">No leads are available to this account. Use sample values instead.</p>
+      }
+    } @else {
+      <div class="sample-grid">
+        @for (variable of placeholders(); track variable.key) {
+          <label>
+            <span>{{ variable.label }}</span>
+            <input
+              [value]="sampleValues[variable.key] || ''"
+              [placeholder]="'{{' + variable.key + '}}'"
+              (input)="setSampleValue(variable.key, $event)"
+            />
+          </label>
+        }
+      </div>
+    }
+    <button
+      class="primary-button"
+      type="button"
+      [disabled]="loading() || (mode === 'lead' && !leadId)"
+      (click)="render()"
+    >
+      {{ loading() ? 'Rendering…' : 'Refresh preview' }}
+    </button>
+  </div>
+
+  @if (errorMessage()) {
+    <p class="alert" role="alert">{{ errorMessage() }}</p>
+  }
+  @if (preview(); as result) {
+    <div class="rendered-subject">
+      <strong>Subject</strong><span>{{ result.rendered_subject }}</span>
+    </div>
+    @if (result.missing_values.length) {
+      <div class="warning" role="status">
+        <strong>Missing values</strong>
+        <ul>
+          @for (issue of result.missing_values; track issue.placeholder) {
+            <li>
+              <code>{{ '{{' + issue.placeholder + '}}' }}</code> — {{ issue.message }}
+            </li>
+          }
+        </ul>
+      </div>
+    }
+    @if (result.warnings.length) {
+      <div class="warning">
+        <strong>Warnings</strong>
+        <ul>
+          @for (warning of result.warnings; track warning) {
+            <li>{{ warning }}</li>
+          }
+        </ul>
+      </div>
+    }
+    <iframe
+      class="message-frame"
+      title="Rendered email template"
+      sandbox=""
+      [srcdoc]="safeDocument()"
+    ></iframe>
+    <div class="attachment-summary">
+      <strong>Attachments ({{ attachments().length }})</strong>
+      @if (attachments().length) {
+        <ul>
+          @for (asset of attachments(); track asset.id) {
+            <li>
+              {{ asset.filename }} <span>{{ formatBytes(asset.size_bytes) }}</span>
+            </li>
+          }
+        </ul>
+      } @else {
+        <span>None</span>
+      }
+    </div>
+  }
+</section>

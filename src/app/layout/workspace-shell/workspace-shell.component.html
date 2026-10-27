@@ -1,9 +1,67 @@
 <div class="app-frame">
-  <aside class="sidebar">
+  <header class="mobile-header" [attr.inert]="mobileMenuOpen() ? '' : null">
     <a class="brand" routerLink="/overview" aria-label="PowerLead overview">
       <span class="brand-mark">P</span>
       <span>PowerLead</span>
     </a>
+    <button
+      #mobileMenuToggle
+      class="menu-toggle"
+      type="button"
+      aria-label="Open navigation"
+      aria-controls="workspace-navigation"
+      [attr.aria-expanded]="mobileMenuOpen()"
+      (click)="openMobileMenu()"
+    >
+      <span aria-hidden="true"></span>
+      <span aria-hidden="true"></span>
+      <span aria-hidden="true"></span>
+    </button>
+  </header>
+
+  @if (mobileMenuOpen()) {
+    <button
+      class="mobile-backdrop"
+      type="button"
+      tabindex="-1"
+      aria-label="Close navigation"
+      aria-hidden="true"
+      (click)="closeMobileMenu()"
+    ></button>
+  }
+
+  <aside
+    #mobileDrawer
+    id="workspace-navigation"
+    class="sidebar"
+    [class.open]="mobileMenuOpen()"
+    [attr.inert]="isMobileViewport() && !mobileMenuOpen() ? '' : null"
+    [attr.aria-hidden]="isMobileViewport() && !mobileMenuOpen() ? 'true' : null"
+    [attr.role]="isMobileViewport() ? 'dialog' : null"
+    [attr.aria-modal]="isMobileViewport() && mobileMenuOpen() ? 'true' : null"
+    [attr.aria-label]="isMobileViewport() ? 'Workspace navigation' : null"
+    tabindex="-1"
+  >
+    <div class="drawer-header">
+      <a
+        class="brand"
+        routerLink="/overview"
+        aria-label="PowerLead overview"
+        (click)="onNavigationSelected()"
+      >
+        <span class="brand-mark">P</span>
+        <span>PowerLead</span>
+      </a>
+      <button
+        #drawerClose
+        class="drawer-close"
+        type="button"
+        aria-label="Close navigation"
+        (click)="closeMobileMenu()"
+      >
+        <span aria-hidden="true">&times;</span>
+      </button>
+    </div>
 
     <div class="workspace-control">
       <label for="workspace">Workspace</label>
@@ -24,10 +82,29 @@
 
     <nav aria-label="Workspace navigation">
       @for (item of menuItems(); track item.path) {
-        <a [routerLink]="item.path" routerLinkActive="active">
-          <span class="nav-icon" aria-hidden="true">{{ item.label.charAt(0) }}</span>
-          <span>{{ item.label }}</span>
-        </a>
+        @if (item.children?.length) {
+          <div class="nav-group">
+            <div class="nav-group-label">
+              <span class="nav-icon" aria-hidden="true">{{ item.label.charAt(0) }}</span>
+              <span>{{ item.label }}</span>
+            </div>
+            <div class="nav-submenu">
+              @for (child of item.children; track child.path) {
+                <a
+                  [routerLink]="child.path"
+                  routerLinkActive="active"
+                  (click)="onNavigationSelected()"
+                  >{{ child.label }}</a
+                >
+              }
+            </div>
+          </div>
+        } @else {
+          <a [routerLink]="item.path" routerLinkActive="active" (click)="onNavigationSelected()">
+            <span class="nav-icon" aria-hidden="true">{{ item.label.charAt(0) }}</span>
+            <span>{{ item.label }}</span>
+          </a>
+        }
       }
     </nav>
 
@@ -41,7 +118,7 @@
     </div>
   </aside>
 
-  <main class="workspace-content">
+  <main class="workspace-content" [attr.inert]="mobileMenuOpen() ? '' : null">
     <router-outlet />
   </main>
 </div>

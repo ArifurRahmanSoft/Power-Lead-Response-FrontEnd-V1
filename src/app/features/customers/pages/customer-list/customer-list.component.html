@@ -1,0 +1,102 @@
+<header class="lead-page-header">
+  <div>
+    <p class="eyebrow">Customer relationships</p>
+    <h1>Customers</h1>
+    <p>View customers created or linked through explicit lead conversions.</p>
+  </div>
+</header>
+
+<form class="lead-filter-panel customer-filter-panel" (ngSubmit)="applySearch()">
+  <div class="filter-panel-heading">
+    <div>
+      <p class="eyebrow">Customer finder</p>
+      <h2>Find a customer</h2>
+      <p>Search by name, email, or company.</p>
+    </div>
+    <div class="filter-actions">
+      <button class="secondary-button" type="button" (click)="clearSearch()">Reset</button>
+      <button class="primary-button" type="submit">Search</button>
+    </div>
+  </div>
+  <label class="search-wide">
+    Search customers
+    <span class="search-control">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-width="2"
+        />
+      </svg>
+      <input type="search" [formControl]="search" placeholder="Name, email, or company" />
+    </span>
+  </label>
+</form>
+
+@if (errorMessage() && !permissionDenied()) {
+  <p class="lead-alert" role="alert">{{ errorMessage() }}</p>
+}
+
+<section class="lead-panel" aria-label="Customer results">
+  @if (loading()) {
+    <div class="lead-state" role="status">Loading customers…</div>
+  } @else if (permissionDenied()) {
+    <div class="lead-state error">
+      <strong>Permission denied</strong>
+      <p>Your role cannot view customers in this workspace.</p>
+    </div>
+  } @else if (!items().length) {
+    <div class="lead-state">
+      <strong>No customers found</strong>
+      <p>Customers appear here after an engaged lead is explicitly converted.</p>
+    </div>
+  } @else {
+    <div class="lead-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Customer</th>
+            <th>Email</th>
+            <th>Company</th>
+            <th>Relationship consent</th>
+            <th>Created</th>
+            <th><span class="visually-hidden">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (customer of items(); track customer.id) {
+            <tr>
+              <td>
+                <strong>{{ customer.first_name }} {{ customer.last_name }}</strong>
+              </td>
+              <td>{{ customer.email }}</td>
+              <td>{{ customer.company || '—' }}</td>
+              <td>
+                <span class="lead-badge">{{ customer.communication_consent_status }}</span>
+              </td>
+              <td>{{ customer.created_at | date: 'mediumDate' }}</td>
+              <td>
+                <div class="row-actions">
+                  <a [routerLink]="['/customers', customer.id]">View</a>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    <div class="lead-pagination">
+      <span>Page {{ page() }} of {{ pageCount() }} · {{ total() }} customers</span>
+      <div>
+        <button type="button" [disabled]="page() <= 1" (click)="goToPage(page() - 1)">
+          Previous
+        </button>
+        <button type="button" [disabled]="page() >= pageCount()" (click)="goToPage(page() + 1)">
+          Next
+        </button>
+      </div>
+    </div>
+  }
+</section>

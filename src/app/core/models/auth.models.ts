@@ -31,6 +31,8 @@ export const PERMISSIONS = {
   leadsImport: 'leads.import',
   leadsAssign: 'leads.assign',
   leadsStatus: 'leads.status',
+  customersView: 'customers.view',
+  customersConvert: 'customers.convert',
   workflowsView: 'workflows.view',
   workflowsCreate: 'workflows.create',
   workflowsUpdate: 'workflows.update',
@@ -58,6 +60,16 @@ export const PERMISSIONS = {
   settingsMenuPermissionsUpdate: 'settings.menu_permissions.update',
   settingsIntegrationsView: 'settings.integrations.view',
   settingsIntegrationsUpdate: 'settings.integrations.update',
+  mailView: 'mail.view',
+  mailManage: 'mail.manage',
+  mailTest: 'mail.test',
+  mailSend: 'mail.send',
+  mailCancel: 'mail.cancel',
+  mailTemplatesView: 'mail.templates.view',
+  mailTemplatesManage: 'mail.templates.manage',
+  mailTemplatesApprove: 'mail.templates.approve',
+  messagesView: 'messages.view',
+  messagesSend: 'messages.send',
 } as const;
 
 export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

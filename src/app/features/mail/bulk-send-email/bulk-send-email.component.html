@@ -1,0 +1,338 @@
+@if (directResult(); as savedResult) {
+  @if (!open()) {
+    <button class="batch-resume" type="button" (click)="resumeBatch()">
+      <span>Batch {{ savedResult.batch_id }}</span>
+      <strong>{{ statusLabel(resultStatus()) }}</strong>
+    </button>
+  }
+}
+
+@if (open()) {
+  <div class="lead-modal-backdrop">
+    <section
+      #dialog
+      class="lead-modal bulk-compose-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="bulk-email-title"
+    >
+      <header class="bulk-header">
+        <div>
+          <p class="eyebrow">Direct backend-authorized send</p>
+          <h2 id="bulk-email-title">Send email to leads</h2>
+          <p>
+            @if (selectionMode === 'all_matching') {
+              All {{ recipientCount }} matching leads across every page
+            } @else {
+              {{ recipientCount }} explicitly selected
+              {{ recipientCount === 1 ? 'lead' : 'leads' }}
+            }
+          </p>
+        </div>
+        <button
+          class="text-button"
+          type="button"
+          [disabled]="submitting() || uncertainSubmission()"
+          (click)="closeComposer()"
+        >
+          Close
+        </button>
+      </header>
+
+      @if (errorMessage()) {
+        <p class="lead-alert" role="alert">{{ errorMessage() }}</p>
+      }
+      @if (notice()) {
+        <p class="lead-notice" role="status">{{ notice() }}</p>
+      }
+
+      @if (!directResult() && !pageData()) {
+        <form class="bulk-form" [formGroup]="composeForm" (ngSubmit)="sendEmails()">
+          <div class="bulk-fields">
+            <label>
+              Sender Email
+              <select
+                #firstControl
+                formControlName="senderAccountId"
+                [disabled]="optionsLoading() || submitting() || uncertainSubmission()"
+              >
+                <option value="">Choose a sender</option>
+                @for (sender of senders(); track sender.id) {
+                  <option [value]="sender.id">
+                    {{ sender.display_name }} — {{ sender.sender_email
+                    }}{{ sender.is_default ? ' (default)' : '' }}
+                  </option>
+                }
+              </select>
+              @if (!optionsLoading() && !senders().length) {
+                <small class="field-error">No active sender email is available.</small>
+              }
+            </label>
+
+            <label>
+              Approved Mail Template
+              <select
+                formControlName="templateKey"
+                [disabled]="optionsLoading() || submitting() || uncertainSubmission()"
+              >
+                <option value="">Choose an approved template</option>
+                @for (template of templates(); track templateKey(template)) {
+                  <option [value]="templateKey(template)">
+                    {{ template.name }} — v{{ template.version }}
+                  </option>
+                }
+              </select>
+              @if (!optionsLoading() && !templates().length) {
+                <small class="field-error">No enabled approved template is available.</small>
+              }
+            </label>
+
+            <label>
+              Mail Type
+              <select
+                formControlName="contactType"
+                [disabled]="submitting() || uncertainSubmission()"
+              >
+                <option value="initial">Initial</option>
+                <option value="follow_up">Follow-up</option>
+                <option value="second_follow_up">Second Follow-up</option>
+                <option value="final_follow_up">Final Follow-up</option>
+              </select>
+            </label>
+          </div>
+
+          <aside class="bulk-eligibility">
+            Clicking Send Email submits this exact scope once. It does not preview or send when a
+            dropdown or row selection changes. The backend remains authoritative for access,
+            explicit consent denial or withdrawal, email validity, suppression, duplicate
+            recipients, approved template version, and active-send checks.
+          </aside>
+
+          <div class="bulk-actions">
+            <button class="secondary-button" type="button" (click)="closeComposer()">Cancel</button>
+            <div class="preview-action">
+              @if (sendBlockedReason(); as reason) {
+                <small id="bulk-send-prerequisite" class="preview-prerequisite" role="status">
+                  {{ reason }}
+                </small>
+              }
+              @if (uncertainSubmission()) {
+                <button
+                  class="primary-button"
+                  type="button"
+                  [disabled]="submitting()"
+                  (click)="resolveSubmission()"
+                >
+                  {{ submitting() ? 'Checking send status…' : 'Check send status' }}
+                </button>
+              } @else {
+                <button
+                  class="primary-button"
+                  type="submit"
+                  [disabled]="!canSend()"
+                  [attr.aria-describedby]="sendBlockedReason() ? 'bulk-send-prerequisite' : null"
+                >
+                  {{
+                    submitting()
+                      ? 'Submitting…'
+                      : 'Send to ' +
+                        recipientCount +
+                        ' ' +
+                        (recipientCount === 1 ? 'Lead' : 'Leads')
+                  }}
+                </button>
+              }
+            </div>
+          </div>
+        </form>
+      }
+
+      @if (directResult(); as result) {
+        <section class="bulk-preview" aria-labelledby="batch-result-title">
+          <div class="batch-heading">
+            <div>
+              <p class="eyebrow">Batch {{ result.batch_id }}</p>
+              <h3 id="batch-result-title">Email batch result</h3>
+            </div>
+            <span class="email-state state-{{ resultStateClass(result) }}">{{
+              resultOutcomeLabel(result)
+            }}</span>
+          </div>
+
+          <div class="count-grid" aria-label="Direct-send result counts">
+            <div>
+              <strong>{{ result.selection_count }}</strong
+              ><span>Selected scope</span>
+            </div>
+            <div>
+              <strong>{{ result.sent_count }}</strong
+              ><span>Sent</span>
+            </div>
+            <div>
+              <strong>{{ result.failed_count }}</strong
+              ><span>Failed</span>
+            </div>
+            <div>
+              <strong>{{ result.unknown_count }}</strong
+              ><span>Unknown</span>
+            </div>
+            <div>
+              <strong>{{ result.skipped_count }}</strong
+              ><span>Skipped</span>
+            </div>
+          </div>
+
+          @if (allRecipientsSkipped()) {
+            <p class="all-skipped-note" role="status">
+              No email was sent. All {{ result.skipped_count }}
+              {{ result.skipped_count === 1 ? 'recipient was' : 'recipients were' }} skipped.
+            </p>
+          } @else {
+            <p class="delivery-note">
+              Sent means the SMTP provider accepted the message; delivery and reading are not
+              verified. Failed and unknown messages are never automatically resent.
+            </p>
+          }
+
+          @if (result.queued_count || result.processing_count) {
+            <p class="all-skipped-note" role="status">
+              {{ result.queued_count + result.processing_count }} recipient outcome is still not
+              terminal. Check status using this batch identity; do not submit a new send.
+            </p>
+          }
+
+          <section class="recipient-list direct-recipient-list" aria-label="Per-lead results">
+            <div class="recipient-list-header">
+              <strong>Per-lead results</strong><span>{{ result.recipients.length }} leads</span>
+            </div>
+            <ol>
+              @for (recipient of result.recipients; track recipientTrack($index, recipient)) {
+                <li>
+                  <div class="direct-recipient-row">
+                    <strong>{{ directRecipientAddress(recipient) }}</strong>
+                    <span class="recipient-state state-{{ recipient.status }}">{{
+                      outcomeLabel(recipient.status, result.contact_type)
+                    }}</span>
+                    @if (directOutcomeReason(recipient); as reason) {
+                      <small class="blocked-reason">{{ reason }}</small>
+                    }
+                    @for (warning of recipient.warnings; track warning) {
+                      <small class="recipient-warnings">{{ warning }}</small>
+                    }
+                  </div>
+                </li>
+              }
+            </ol>
+          </section>
+
+          @if (conflictsLoading()) {
+            <p class="polling-note" role="status">Loading the blocking email details…</p>
+          }
+          @if (pendingEmailConflicts().length) {
+            <section class="pending-conflicts" aria-labelledby="pending-conflicts-title">
+              <div>
+                <p class="eyebrow">Existing active email</p>
+                <h4 id="pending-conflicts-title">Pending email blocked this send</h4>
+              </div>
+              @for (
+                conflict of pendingEmailConflicts();
+                track conflict.recipient.requested_lead_id
+              ) {
+                <article class="pending-conflict-card">
+                  @if (conflict.message; as message) {
+                    <dl class="pending-message-details">
+                      <div>
+                        <dt>Status</dt>
+                        <dd>{{ pendingMessageStatus(conflict) }}</dd>
+                      </div>
+                      <div>
+                        <dt>Recipient</dt>
+                        <dd>{{ message.recipient_email }}</dd>
+                      </div>
+                      <div>
+                        <dt>Subject</dt>
+                        <dd>{{ message.subject }}</dd>
+                      </div>
+                      <div>
+                        <dt>Sender</dt>
+                        <dd>
+                          {{ message.sender.display_name }} — {{ message.sender.sender_email }}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Mail type</dt>
+                        <dd>{{ contactTypeLabel(message.contact_stage || 'initial') }}</dd>
+                      </div>
+                      <div>
+                        <dt>Created</dt>
+                        <dd>{{ message.created_at | date: 'medium' }}</dd>
+                      </div>
+                      <div>
+                        <dt>Message ID</dt>
+                        <dd>{{ message.id }}</dd>
+                      </div>
+                    </dl>
+                    @if (!replaceableConflicts().includes(conflict)) {
+                      <p class="replacement-restriction">
+                        This message cannot be replaced here. Processing, uncertain, or previously
+                        attempted messages are preserved.
+                      </p>
+                    }
+                  } @else {
+                    <p class="replacement-restriction">
+                      {{ conflict.loadError || 'The active message is no longer available.' }}
+                    </p>
+                  }
+                </article>
+              }
+              @if (replaceableConflicts().length) {
+                <div class="replacement-action">
+                  <p>
+                    Only the blocked, untouched queued
+                    {{ replaceableConflicts().length === 1 ? 'email' : 'emails' }} will be replaced.
+                    The backend rechecks safety atomically before sending.
+                  </p>
+                  <button
+                    class="primary-button"
+                    type="button"
+                    [disabled]="submitting() || uncertainSubmission()"
+                    (click)="replacePendingEmails()"
+                  >
+                    {{ submitting() ? 'Replacing and sending…' : 'Replace pending email and send' }}
+                  </button>
+                </div>
+              }
+            </section>
+          }
+
+          @if (uncertainSubmission()) {
+            <div class="replacement-action">
+              <p>
+                The replacement outcome is uncertain. This check reuses the same operation identity
+                and will not create a new send.
+              </p>
+              <button
+                class="primary-button"
+                type="button"
+                [disabled]="submitting()"
+                (click)="resolveSubmission()"
+              >
+                {{ submitting() ? 'Checking send status…' : 'Check send status' }}
+              </button>
+            </div>
+          }
+
+          @if (polling()) {
+            <p class="polling-note" role="status">Refreshing delivery progress…</p>
+          }
+          @if (pollingLimitReached()) {
+            <p class="polling-note">
+              Automatic refresh stopped after a bounded polling window. Reopen this batch to refresh
+              it; no message will be resent.
+            </p>
+          }
+        </section>
+      }
+    </section>
+  </div>
+}

@@ -1,8 +1,15 @@
 import { provideRouter } from '@angular/router';
 import { By } from '@angular/platform-browser';
 import { TestBed } from '@angular/core/testing';
+import { HttpErrorResponse } from '@angular/common/http';
+import { of, Subject, throwError } from 'rxjs';
 
 import { PERMISSIONS, PermissionKey } from '../../../../core/models/auth.models';
+import {
+  ApiDataResponse,
+  PaginatedData,
+  SettingsUser,
+} from '../../../../core/models/settings.models';
 import { AuthService } from '../../../../core/services/auth.service';
 import { SettingsService } from '../../../../core/services/settings.service';
 import { Lead, LeadCreateRequest } from '../../models/lead.models';
@@ -10,6 +17,55 @@ import { LeadVoiceFormValues } from '../../models/lead-voice.models';
 import { LeadVoiceService } from '../../services/lead-voice.service';
 import { LeadsService } from '../../services/leads.service';
 import { LeadFormComponent } from './lead-form.component';
+
+const ORIGINAL_ASSIGNEE_ID = '11111111-1111-4111-8111-111111111111';
+const NEW_ASSIGNEE_ID = '22222222-2222-4222-8222-222222222222';
+
+function editLead(assignedUserId: string | null = ORIGINAL_ASSIGNEE_ID): Lead {
+  return {
+    id: 'lead-id',
+    tracking_id: 'PL-1',
+    first_name: 'Jane',
+    last_name: 'Doe',
+    email: 'jane@example.com',
+    country: 'Bangladesh',
+    company: 'Acme',
+    company_website: 'https://example.com',
+    service_requested: 'SEO',
+    email_status: 'unknown',
+    consent_status: 'unknown',
+    source: 'manual',
+    status: 'new',
+    priority: 'normal',
+    assigned_user_id: assignedUserId,
+    import_batch_id: null,
+    created_at: '2026-10-05T00:00:00Z',
+    created_by: 'user-id',
+    updated_at: '2026-10-05T00:00:00Z',
+    updated_by: 'user-id',
+    row_version: 4,
+  };
+}
+
+function settingsUser(id: string, displayName: string): SettingsUser {
+  return {
+    id,
+    membership_id: `membership-${id}`,
+    display_name: displayName,
+    email: `${displayName.toLowerCase()}@example.com`,
+    login_id: `${displayName.toLowerCase()}-login`,
+    role_id: 'role-id',
+    role_name: 'Sales',
+    is_active: true,
+  };
+}
+
+function userPage(users: SettingsUser[]): ApiDataResponse<PaginatedData<SettingsUser>> {
+  return {
+    success: true,
+    data: { items: users, page: 1, size: 100, total: users.length },
+  };
+}
 
 describe('LeadFormComponent backend contract', () => {
   beforeEach(() => {
@@ -115,6 +171,7 @@ describe('LeadFormComponent backend contract', () => {
       consent_status: 'unknown',
       source: 'manual',
       status: 'new',
+      priority: 'normal',
       assigned_user_id: null,
       import_batch_id: null,
       created_at: '2026-10-05T00:00:00Z',
@@ -135,6 +192,237 @@ describe('LeadFormComponent backend contract', () => {
     expect(form['country']).toBe('Bangladesh');
     expect(form['companyWebsite']).toBe('https://google.com/path');
     expect(form['serviceRequested']).toBe('SEO');
+  });
+
+  it('omits assignment fields when the assignee is unchanged', () => {
+    const lead = editLead();
+    const update = vi.fn().mockReturnValue(of({ success: true, data: lead }));
+    const hasPermission = (permission: PermissionKey) =>
+      ([
+        PERMISSIONS.leadsView,
+        PERMISSIONS.leadsUpdate,
+        PERMISSIONS.leadsAssign,
+        PERMISSIONS.settingsUsersView,
+      ] as PermissionKey[]).includes(permission);
+    TestBed.overrideProvider(AuthService, { useValue: { hasPermission } });
+    TestBed.overrideProvider(SettingsService, {
+      useValue: {
+        listUsers: vi
+          .fn()
+          .mockReturnValue(of(userPage([settingsUser(ORIGINAL_ASSIGNEE_ID, 'Original')]))),
+      },
+    });
+    TestBed.overrideProvider(LeadsService, { useValue: { update } });
+    const fixture = TestBed.createComponent(LeadFormComponent);
+    fixture.componentRef.setInput('lead', lead);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as { submit(): void };
+
+    component.submit();
+
+    const payload = update.mock.calls[0][1] as Record<string, unknown>;
+    expect(payload['company']).toBe('Acme');
+    expect(payload['row_version']).toBe(4);
+    expect(payload).not.toHaveProperty('assigned_user_id');
+    expect(payload).not.toHaveProperty('assignment_reason');
+    expect(payload).not.toHaveProperty('pending_task_disposition');
+    expect(fixture.debugElement.query(By.css('[formControlName="assignmentReason"]'))).toBeNull();
+  });
+
+  it('requires and sends a reason and pending-task choice for reassignment', () => {
+    const lead = editLead();
+    const update = vi.fn().mockReturnValue(of({ success: true, data: lead }));
+    TestBed.overrideProvider(AuthService, {
+      useValue: {
+        hasPermission: (permission: PermissionKey) =>
+          ([
+            PERMISSIONS.leadsUpdate,
+            PERMISSIONS.leadsAssign,
+            PERMISSIONS.settingsUsersView,
+          ] as PermissionKey[]).includes(permission),
+      },
+    });
+    TestBed.overrideProvider(SettingsService, {
+      useValue: {
+        listUsers: vi.fn().mockReturnValue(
+          of(
+            userPage([
+              settingsUser(ORIGINAL_ASSIGNEE_ID, 'Original'),
+              settingsUser(NEW_ASSIGNEE_ID, 'Replacement'),
+            ]),
+          ),
+        ),
+      },
+    });
+    TestBed.overrideProvider(LeadsService, { useValue: { update } });
+    const fixture = TestBed.createComponent(LeadFormComponent);
+    fixture.componentRef.setInput('lead', lead);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as {
+      form: { patchValue(value: Record<string, string>): void };
+      submit(): void;
+    };
+
+    component.form.patchValue({ assignedUserId: NEW_ASSIGNEE_ID });
+    fixture.detectChanges();
+    expect(fixture.debugElement.query(By.css('[formControlName="assignmentReason"]'))).not.toBeNull();
+    component.submit();
+    fixture.detectChanges();
+    expect(update).not.toHaveBeenCalled();
+    expect(
+      fixture.debugElement.query(By.css('[formControlName="assignmentReason"] + .field-help')),
+    ).not.toBeNull();
+
+    component.form.patchValue({
+      assignmentReason: 'Territory ownership changed',
+      pendingTaskDisposition: 'cancel',
+    });
+    component.submit();
+
+    expect(update.mock.calls[0][1]).toMatchObject({
+      assigned_user_id: NEW_ASSIGNEE_ID,
+      assignment_reason: 'Territory ownership changed',
+      pending_task_disposition: 'cancel',
+      row_version: 4,
+    });
+  });
+
+  it('treats explicitly clearing an assignee as an assignment change', () => {
+    const lead = editLead();
+    const update = vi.fn().mockReturnValue(of({ success: true, data: lead }));
+    TestBed.overrideProvider(AuthService, {
+      useValue: {
+        hasPermission: (permission: PermissionKey) =>
+          ([
+            PERMISSIONS.leadsUpdate,
+            PERMISSIONS.leadsAssign,
+            PERMISSIONS.settingsUsersView,
+          ] as PermissionKey[]).includes(permission),
+      },
+    });
+    TestBed.overrideProvider(SettingsService, {
+      useValue: {
+        listUsers: vi
+          .fn()
+          .mockReturnValue(of(userPage([settingsUser(ORIGINAL_ASSIGNEE_ID, 'Original')]))),
+      },
+    });
+    TestBed.overrideProvider(LeadsService, { useValue: { update } });
+    const fixture = TestBed.createComponent(LeadFormComponent);
+    fixture.componentRef.setInput('lead', lead);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as {
+      form: { patchValue(value: Record<string, string>): void };
+      submit(): void;
+    };
+
+    component.form.patchValue({
+      assignedUserId: '',
+      assignmentReason: 'Returning to the unassigned queue',
+      pendingTaskDisposition: 'retain',
+    });
+    component.submit();
+
+    expect(update.mock.calls[0][1]).toMatchObject({
+      assigned_user_id: null,
+      assignment_reason: 'Returning to the unassigned queue',
+      pending_task_disposition: 'retain',
+    });
+  });
+
+  it('shows backend assignment field errors next to the reason input', () => {
+    const lead = editLead();
+    const update = vi.fn().mockReturnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 422,
+            error: {
+              detail: [
+                {
+                  loc: ['body', 'assignment_reason'],
+                  msg: 'Use a more specific reason.',
+                },
+              ],
+            },
+          }),
+      ),
+    );
+    TestBed.overrideProvider(AuthService, {
+      useValue: {
+        hasPermission: (permission: PermissionKey) =>
+          ([PERMISSIONS.leadsUpdate, PERMISSIONS.leadsAssign] as PermissionKey[]).includes(
+            permission,
+          ),
+      },
+    });
+    TestBed.overrideProvider(LeadsService, { useValue: { update } });
+    const fixture = TestBed.createComponent(LeadFormComponent);
+    fixture.componentRef.setInput('lead', lead);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as {
+      form: {
+        patchValue(value: Record<string, string>): void;
+        controls: { assignmentReason: { errors: Record<string, unknown> | null } };
+      };
+      submit(): void;
+    };
+    component.form.patchValue({
+      assignedUserId: NEW_ASSIGNEE_ID,
+      assignmentReason: 'Change',
+      pendingTaskDisposition: 'transfer',
+    });
+    fixture.detectChanges();
+
+    component.submit();
+    fixture.detectChanges();
+
+    expect(update).toHaveBeenCalled();
+    expect(component.form.controls.assignmentReason.errors).toMatchObject({
+      server: 'Use a more specific reason.',
+    });
+    const reasonInput = fixture.nativeElement.querySelector(
+      '[formControlName="assignmentReason"]',
+    ) as HTMLTextAreaElement;
+    expect(reasonInput.parentElement?.textContent).toContain('Use a more specific reason.');
+  });
+
+  it('preserves the saved assignee while delayed options load and explains unresolved values', () => {
+    const lead = editLead();
+    const users = new Subject<ApiDataResponse<PaginatedData<SettingsUser>>>();
+    TestBed.overrideProvider(AuthService, {
+      useValue: {
+        hasPermission: (permission: PermissionKey) =>
+          ([
+            PERMISSIONS.leadsUpdate,
+            PERMISSIONS.leadsAssign,
+            PERMISSIONS.settingsUsersView,
+          ] as PermissionKey[]).includes(permission),
+      },
+    });
+    TestBed.overrideProvider(SettingsService, {
+      useValue: { listUsers: vi.fn().mockReturnValue(users) },
+    });
+    const fixture = TestBed.createComponent(LeadFormComponent);
+    fixture.componentRef.setInput('lead', lead);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as {
+      form: { getRawValue(): Record<string, unknown> };
+    };
+
+    expect(component.form.getRawValue()['assignedUserId']).toBe(ORIGINAL_ASSIGNEE_ID);
+    expect(fixture.nativeElement.textContent).toContain(
+      'The saved assignee will remain selected while the list loads.',
+    );
+
+    users.next(userPage([settingsUser(NEW_ASSIGNEE_ID, 'Replacement')]));
+    users.complete();
+    fixture.detectChanges();
+
+    expect(component.form.getRawValue()['assignedUserId']).toBe(ORIGINAL_ASSIGNEE_ID);
+    expect(fixture.nativeElement.textContent).toContain(
+      'The saved assignee is not in the eligible-user list.',
+    );
   });
 
   it('preserves nonblank manual values until voice overwrite is explicitly confirmed', () => {

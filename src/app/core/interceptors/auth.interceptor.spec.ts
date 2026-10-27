@@ -1,7 +1,7 @@
 import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 
 import { API_CONFIG } from '../config/api.config';
 import { authInterceptor } from './auth.interceptor';
@@ -68,5 +68,70 @@ describe('authInterceptor', () => {
     expect(second.request.headers.has('Authorization')).toBe(false);
     first.flush({});
     second.flush({});
+  });
+
+  it('leaves mail-history permission failures on the current detail page', () => {
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    httpClient.get(`${API_CONFIG.baseUrl}/mail/messages?customer_id=customer-1`).subscribe({
+      error: () => undefined,
+    });
+
+    http
+      .expectOne(`${API_CONFIG.baseUrl}/mail/messages?customer_id=customer-1`)
+      .flush({ detail: 'Message access is forbidden' }, { status: 403, statusText: 'Forbidden' });
+
+    expect(navigate).not.toHaveBeenCalledWith(['/access-denied']);
+  });
+
+  it('leaves SMS permission failures in the composer for an actionable error', () => {
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    httpClient.post(`${API_CONFIG.baseUrl}/sms/send`, {}).subscribe({
+      error: () => undefined,
+    });
+
+    http
+      .expectOne(`${API_CONFIG.baseUrl}/sms/send`)
+      .flush(
+        { detail: 'Insufficient workspace permission' },
+        { status: 403, statusText: 'Forbidden' },
+      );
+
+    expect(navigate).not.toHaveBeenCalledWith(['/access-denied']);
+  });
+
+  it('leaves SMS recovery permission failures in the composer for an actionable error', () => {
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    httpClient
+      .get(`${API_CONFIG.baseUrl}/sms/operations/recover?idempotency_key=sms-key-0001`)
+      .subscribe({ error: () => undefined });
+
+    http
+      .expectOne(`${API_CONFIG.baseUrl}/sms/operations/recover?idempotency_key=sms-key-0001`)
+      .flush(
+        { detail: 'Insufficient workspace permission' },
+        { status: 403, statusText: 'Forbidden' },
+      );
+
+    expect(navigate).not.toHaveBeenCalledWith(['/access-denied']);
+  });
+
+  it('leaves WhatsApp action permission failures in the inbox for an actionable error', () => {
+    const router = TestBed.inject(Router);
+    const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+    httpClient
+      .post(`${API_CONFIG.baseUrl}/messages/whatsapp/conversations/conversation-1/reply`, {})
+      .subscribe({ error: () => undefined });
+
+    http
+      .expectOne(`${API_CONFIG.baseUrl}/messages/whatsapp/conversations/conversation-1/reply`)
+      .flush(
+        { detail: 'Insufficient workspace permission' },
+        { status: 403, statusText: 'Forbidden' },
+      );
+
+    expect(navigate).not.toHaveBeenCalledWith(['/access-denied']);
   });
 });

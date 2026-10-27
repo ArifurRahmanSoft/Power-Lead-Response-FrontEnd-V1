@@ -1,0 +1,55 @@
+<section class="composer" aria-label="Messenger reply composer">
+  @if (!canSend) {
+    <p class="composer-note permission-note">
+      You can read this conversation, but you do not have permission to send Messenger replies.
+    </p>
+  } @else if (!replyWindowOpen) {
+    <div class="composer-note window-note" role="status">
+      <strong>Reply unavailable</strong>
+      @if (eligibility?.blocking_reasons?.length) {
+        <ul>
+          @for (reason of eligibility!.blocking_reasons; track reason.code) {
+            <li>{{ reason.message }}</li>
+          }
+        </ul>
+      } @else {
+        <p>The standard Messenger reply window is closed.</p>
+      }
+    </div>
+  }
+
+  @if (errorMessage) {
+    <div class="feedback error" role="alert">
+      <span>{{ errorMessage }}</span>
+      @if (uncertain) {
+        <button type="button" [disabled]="checkingResult" (click)="checkResult.emit()">
+          {{ checkingResult ? 'Checking...' : 'Check Result' }}
+        </button>
+      }
+    </div>
+  }
+  @if (notice) {
+    <p class="feedback notice" role="status">{{ notice }}</p>
+  }
+
+  <div class="compose-row">
+    <label class="message-field">
+      <span class="sr-only">Messenger reply</span>
+      <textarea
+        rows="2"
+        [maxLength]="maxCharacters"
+        [disabled]="!canSend"
+        [value]="draft"
+        (input)="updateDraft($any($event.target).value)"
+        placeholder="Write a reply..."
+      ></textarea>
+      <span class="character-count" [class.over-limit]="draft.length > maxCharacters"
+        >{{ draft.length }} / {{ maxCharacters }}</span
+      >
+    </label>
+    <button class="send-button" type="button" [disabled]="disabled()" (click)="submit()">
+      <span>{{ sending ? 'Sending...' : 'Send' }}</span>
+      <span aria-hidden="true">➤</span>
+    </button>
+  </div>
+</section>

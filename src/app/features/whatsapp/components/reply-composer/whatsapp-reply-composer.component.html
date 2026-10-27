@@ -1,0 +1,151 @@
+<section class="composer" aria-label="Reply composer">
+  @if (!canSend) {
+    <p class="composer-note permission-note">
+      You can read this conversation, but you do not have permission to send WhatsApp messages.
+    </p>
+  } @else if (!serviceWindowOpen && provider === 'twilio') {
+    <p class="composer-note window-note">
+      The 24-hour service window is closed. This Twilio channel cannot send arbitrary text or use
+      the Meta approved-template API.
+    </p>
+  } @else if (templateMode()) {
+    <p class="composer-note window-note">
+      The service window is closed. Choose an approved Meta WhatsApp template. PowerLead Message
+      Templates are not used here.
+    </p>
+  }
+
+  @if (eligibility?.restrictions?.length) {
+    <div class="restrictions" role="status">
+      <strong>Sending restrictions</strong>
+      <ul>
+        @for (
+          restriction of eligibility!.restrictions;
+          track restriction.code || restriction.message
+        ) {
+          <li>
+            {{ restriction.message || restriction.code || 'Sending is restricted by the backend.' }}
+          </li>
+        }
+      </ul>
+    </div>
+  }
+
+  @if (errorMessage) {
+    <div class="feedback error" role="alert">
+      <span>{{ errorMessage }}</span>
+      @if (uncertain) {
+        <button type="button" [disabled]="checkingResult" (click)="checkResult.emit()">
+          {{ checkingResult ? 'Checking...' : 'Check Result' }}
+        </button>
+      }
+    </div>
+  }
+  @if (notice) {
+    <p class="feedback notice" role="status">{{ notice }}</p>
+  }
+
+  @if (templateMode()) {
+    @if (templatesLoading) {
+      <p class="template-state" role="status">Loading approved templates...</p>
+    } @else if (templatesError) {
+      <div class="feedback error" role="alert">
+        <span>{{ templatesError }}</span
+        ><button type="button" (click)="retryTemplates.emit()">Retry</button>
+      </div>
+    } @else if (!templates.length) {
+      <p class="template-state">
+        No approved Meta WhatsApp templates are available for this business account.
+      </p>
+    } @else {
+      <div class="template-grid">
+        <label>
+          Approved template
+          <select
+            [value]="templateName"
+            (change)="templateNameChange.emit($any($event.target).value)"
+          >
+            @for (name of templateNames(); track name) {
+              <option [value]="name">{{ name }}</option>
+            }
+          </select>
+        </label>
+        <label>
+          Language
+          <select
+            [value]="templateLanguage"
+            (change)="templateLanguageChange.emit($any($event.target).value)"
+          >
+            @for (language of templateLanguages(); track language) {
+              <option [value]="language">{{ language }}</option>
+            }
+          </select>
+        </label>
+        <label>
+          Purpose
+          <select [value]="purpose" (change)="changePurpose($any($event.target).value)">
+            <option value="lead_acquisition">Lead acquisition</option>
+            <option value="customer_service">Customer service</option>
+          </select>
+        </label>
+      </div>
+      @if (selectedTemplate(); as template) {
+        @if (template.required_variables.length) {
+          <div class="variable-grid">
+            @for (
+              variable of template.required_variables;
+              track variable.component + ':' + variable.index
+            ) {
+              <label>
+                {{ variable.component }} variable {{ variable.index }}
+                <input
+                  type="text"
+                  maxlength="1024"
+                  autocomplete="off"
+                  [value]="templateVariables[variableKey(variable.component, variable.index)] || ''"
+                  (input)="
+                    templateVariableChange.emit({
+                      key: variableKey(variable.component, variable.index),
+                      value: $any($event.target).value,
+                    })
+                  "
+                />
+              </label>
+            }
+          </div>
+        }
+        <div class="template-summary" aria-label="Template summary">
+          <strong>Message summary</strong>
+          <p>{{ templateSummary() }}</p>
+        </div>
+      }
+    }
+    <div class="template-send-row">
+      <button class="send-button" type="button" [disabled]="disabled()" (click)="submit()">
+        <span>{{ sending ? 'Sending...' : 'Send template' }}</span
+        ><span aria-hidden="true">➤</span>
+      </button>
+    </div>
+  } @else {
+    <div class="compose-row">
+      <label class="message-field">
+        <span class="sr-only">WhatsApp reply</span>
+        <textarea
+          rows="2"
+          [maxLength]="maxCharacters"
+          [disabled]="!canSend || !serviceWindowOpen || sending || uncertain"
+          [value]="draft"
+          (input)="updateDraft($any($event.target).value)"
+          placeholder="Write a reply..."
+        ></textarea>
+        <span class="character-count" [class.over-limit]="draft.length > maxCharacters"
+          >{{ draft.length }} / {{ maxCharacters }}</span
+        >
+      </label>
+      <button class="send-button" type="button" [disabled]="disabled()" (click)="submit()">
+        <span>{{ sending ? 'Sending...' : 'Send' }}</span
+        ><span aria-hidden="true">➤</span>
+      </button>
+    </div>
+  }
+</section>

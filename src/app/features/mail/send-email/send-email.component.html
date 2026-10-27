@@ -1,0 +1,374 @@
+@if (auth.hasPermission(permissions.mailSend)) {
+  <button class="primary-button" type="button" (click)="openComposer()">Send email</button>
+}
+
+@if (open()) {
+  <div class="lead-modal-backdrop">
+    <section
+      class="lead-modal email-compose-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="send-email-title"
+    >
+      <header class="email-compose-header">
+        <div>
+          <p class="eyebrow">Backend-authorized message</p>
+          <h2 id="send-email-title">Send email</h2>
+        </div>
+        <button
+          class="text-button"
+          type="button"
+          [disabled]="sending() || (uncertainSubmission() && !message())"
+          (click)="closeComposer()"
+        >
+          Close
+        </button>
+      </header>
+
+      @if (errorMessage()) {
+        <p class="lead-alert" role="alert">{{ errorMessage() }}</p>
+      }
+
+      @if (!message()) {
+        <form class="email-compose-form" [formGroup]="composeForm" (ngSubmit)="requestPreview()">
+          <div class="email-field-grid">
+            <label>
+              Recipient
+              <input type="email" [value]="recipient" readonly aria-readonly="true" />
+              <small>Recipient overrides are not allowed.</small>
+            </label>
+            <label>
+              Communication purpose
+              <input type="text" [value]="purposeLabel()" readonly aria-readonly="true" />
+            </label>
+            <label>
+              Active sender account
+              <select
+                formControlName="senderAccountId"
+                [disabled]="optionsLoading() || previewing() || sending() || uncertainSubmission()"
+              >
+                <option value="">Choose a sender</option>
+                @for (sender of senders(); track sender.id) {
+                  <option [value]="sender.id">
+                    {{ sender.display_name }} — {{ sender.sender_email
+                    }}{{ sender.is_default ? ' (default)' : '' }}
+                  </option>
+                }
+              </select>
+              @if (!optionsLoading() && !senders().length) {
+                <small class="field-error">No active configured sender account is available.</small>
+              }
+            </label>
+            <label>
+              Approved template/version
+              <select
+                formControlName="templateKey"
+                [disabled]="optionsLoading() || previewing() || sending() || uncertainSubmission()"
+              >
+                <option value="">Choose an approved version</option>
+                @for (template of templates(); track templateKey(template)) {
+                  <option [value]="templateKey(template)">
+                    {{ template.name }} — v{{ template.version }}
+                  </option>
+                }
+              </select>
+              @if (!optionsLoading() && !templates().length) {
+                <small class="field-error"
+                  >No enabled approved template version is available.</small
+                >
+              }
+            </label>
+          </div>
+
+          <aside class="eligibility-panel" [class.ineligible]="eligibilityIssues.length">
+            <strong>Backend eligibility checks</strong>
+            @if (contextType === 'lead') {
+              <p>
+                Lead acquisition requires an active, non-converted lead, consent that has not been
+                explicitly denied or withdrawn, and an email that is not invalid, bounced, or
+                disposable.
+              </p>
+            } @else {
+              <p>
+                Customer service requires consent that has not been explicitly denied or withdrawn,
+                with no email suppression or email channel restriction.
+              </p>
+            }
+            <p>
+              Unknown or empty consent is not treated as granted. The backend eligibility result is
+              authoritative and rechecks the record, sender, approved template, consent,
+              suppression, and rendered values at preview, enqueue, and before provider submission.
+            </p>
+            @if (eligibilityIssues.length) {
+              <ul>
+                @for (issue of eligibilityIssues; track issue) {
+                  <li>{{ issue }}</li>
+                }
+              </ul>
+            }
+          </aside>
+
+          @if (!preview()) {
+            <div class="email-actions">
+              <button
+                class="secondary-button"
+                type="button"
+                [disabled]="sending()"
+                (click)="closeComposer()"
+              >
+                Cancel
+              </button>
+              <button class="primary-button" type="submit" [disabled]="!canPreview()">
+                {{
+                  previewing()
+                    ? 'Creating preview…'
+                    : optionsLoading()
+                      ? 'Loading options…'
+                      : 'Preview email'
+                }}
+              </button>
+            </div>
+          }
+        </form>
+      }
+
+      @if (preview(); as draft) {
+        <section class="backend-preview" aria-labelledby="backend-preview-title">
+          <div class="preview-heading">
+            <div>
+              <p class="eyebrow">Exact backend snapshot</p>
+              <h3 id="backend-preview-title">Confirm email</h3>
+            </div>
+            <span>Expires {{ draft.expires_at | date: 'short' }}</span>
+          </div>
+          <dl class="preview-metadata">
+            <div>
+              <dt>Recipient</dt>
+              <dd>{{ draft.recipient }}</dd>
+            </div>
+            <div>
+              <dt>Sender</dt>
+              <dd>{{ draft.sender.display_name }} &lt;{{ draft.sender.sender_email }}&gt;</dd>
+            </div>
+            <div>
+              <dt>Reply-to</dt>
+              <dd>{{ draft.sender.reply_to || 'Sender address' }}</dd>
+            </div>
+            <div>
+              <dt>Purpose</dt>
+              <dd>{{ purposeLabel() }}</dd>
+            </div>
+            <div class="full">
+              <dt>Subject</dt>
+              <dd>{{ draft.subject }}</dd>
+            </div>
+          </dl>
+
+          <div class="email-preview-block">
+            <strong>Rendered body and signature</strong>
+            <p>
+              The isolated frame below is the backend-rendered HTML. The signature is already
+              included exactly once.
+            </p>
+            <iframe
+              class="email-message-frame"
+              title="Backend-rendered email body and signature"
+              sandbox=""
+              [srcdoc]="safeDocument()"
+            ></iframe>
+          </div>
+
+          <div class="asset-grid">
+            <section>
+              <strong>Inline images ({{ draft.inline_asset_count }})</strong>
+              @if (inlineAssets().length) {
+                <ul>
+                  @for (asset of inlineAssets(); track asset.id) {
+                    <li>
+                      {{ asset.filename }} <span>{{ formatBytes(asset.size_bytes) }}</span>
+                    </li>
+                  }
+                </ul>
+              } @else {
+                <p>None</p>
+              }
+            </section>
+            <section>
+              <strong>Attachments ({{ draft.attachment_count }})</strong>
+              @if (attachments().length) {
+                <ul>
+                  @for (asset of attachments(); track asset.id) {
+                    <li>
+                      {{ asset.filename }} <span>{{ formatBytes(asset.size_bytes) }}</span>
+                    </li>
+                  }
+                </ul>
+              } @else {
+                <p>None</p>
+              }
+            </section>
+          </div>
+          @if (assetNotice()) {
+            <p class="asset-notice" role="status">{{ assetNotice() }}</p>
+          }
+
+          @if (!message()) {
+            <label class="send-confirmation">
+              <input
+                type="checkbox"
+                [checked]="confirmed()"
+                [disabled]="sending() || uncertainSubmission()"
+                (change)="setConfirmed($event)"
+              />
+              <span
+                >I confirm this exact recipient, sender, subject, body, signature, inline images,
+                and attachments.</span
+              >
+            </label>
+            <div class="email-actions">
+              <button
+                class="secondary-button"
+                type="button"
+                [disabled]="sending() || uncertainSubmission()"
+                (click)="invalidatePreview()"
+              >
+                Change selections
+              </button>
+              @if (uncertainSubmission()) {
+                <button
+                  class="primary-button"
+                  type="button"
+                  [disabled]="sending()"
+                  (click)="resolveUncertainSubmission()"
+                >
+                  {{ sending() ? 'Resolving…' : 'Resolve submission' }}
+                </button>
+              } @else {
+                <button
+                  class="primary-button"
+                  type="button"
+                  [disabled]="!confirmed() || sending()"
+                  (click)="send()"
+                >
+                  {{ sending() ? 'Enqueueing…' : 'Confirm and enqueue' }}
+                </button>
+              }
+            </div>
+          }
+        </section>
+      }
+
+      @if (message(); as currentMessage) {
+        <section class="message-status" aria-live="polite">
+          <div class="message-state-heading">
+            <div>
+              <p class="eyebrow">Message {{ currentMessage.id }}</p>
+              <h3>{{ statusLabel(currentMessage.status) }}</h3>
+            </div>
+            <span class="message-state state-{{ currentMessage.status }}">{{
+              currentMessage.status
+            }}</span>
+          </div>
+          @if (currentMessage.status === 'sent') {
+            <p class="status-explanation">
+              Sent means the SMTP provider accepted the message for sending. It does not mean
+              delivered or read.
+            </p>
+          }
+          @if (currentMessage.status === 'failed' || currentMessage.status === 'unknown') {
+            <p class="status-explanation warning">This message will not be resent automatically.</p>
+          }
+          @if (latestFailureReason(currentMessage); as reason) {
+            <p class="lead-alert" role="alert">{{ reason }}</p>
+          }
+          <dl class="preview-metadata">
+            <div>
+              <dt>Created</dt>
+              <dd>{{ currentMessage.created_at | date: 'medium' }}</dd>
+            </div>
+            <div>
+              <dt>Processing</dt>
+              <dd>
+                {{
+                  currentMessage.processing_at
+                    ? (currentMessage.processing_at | date: 'medium')
+                    : 'Not started'
+                }}
+              </dd>
+            </div>
+            <div>
+              <dt>Accepted</dt>
+              <dd>
+                {{
+                  currentMessage.sent_at
+                    ? (currentMessage.sent_at | date: 'medium')
+                    : 'Not accepted'
+                }}
+              </dd>
+            </div>
+            <div>
+              <dt>Cancelled</dt>
+              <dd>
+                {{
+                  currentMessage.cancelled_at
+                    ? (currentMessage.cancelled_at | date: 'medium')
+                    : 'No'
+                }}
+              </dd>
+            </div>
+          </dl>
+          @if (currentMessage.events.length) {
+            <ol class="message-events">
+              @for (event of currentMessage.events; track event.status + event.occurred_at) {
+                <li>
+                  <strong>{{ statusLabel(event.status) }}</strong
+                  ><span>{{ event.occurred_at | date: 'medium' }}</span>
+                  @if (event.safe_reason) {
+                    <small>{{ event.safe_reason }}</small>
+                  }
+                </li>
+              }
+            </ol>
+          }
+          @if (polling()) {
+            <p class="polling-note" role="status">Refreshing status…</p>
+          }
+          @if (pollingLimitReached()) {
+            <p class="polling-note">
+              Automatic status refresh stopped after a bounded polling window. Reopen the record
+              later to view newer activity.
+            </p>
+          }
+          @if (canCancel(currentMessage)) {
+            <div class="cancel-message-panel">
+              <label
+                >Cancellation reason<input
+                  type="text"
+                  maxlength="500"
+                  [formControl]="cancellationReason"
+              /></label>
+              <button
+                class="danger-button"
+                type="button"
+                [disabled]="cancelling() || cancellationReason.invalid"
+                (click)="cancelMessage()"
+              >
+                {{ cancelling() ? 'Cancelling…' : 'Cancel queued email' }}
+              </button>
+            </div>
+          }
+          <div class="email-actions">
+            <button
+              class="secondary-button"
+              type="button"
+              [disabled]="sending() || cancelling()"
+              (click)="closeComposer()"
+            >
+              Close
+            </button>
+          </div>
+        </section>
+      }
+    </section>
+  </div>
+}

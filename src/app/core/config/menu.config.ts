@@ -121,6 +121,11 @@ export const WORKSPACE_MENU: readonly MenuItem[] = [
         path: '/messages/messenger',
         requiredPermissions: [PERMISSIONS.messagesView],
       },
+      {
+        label: 'Instagram',
+        path: '/messages/instagram',
+        requiredPermissions: [PERMISSIONS.messagesView],
+      },
     ],
   },
   {

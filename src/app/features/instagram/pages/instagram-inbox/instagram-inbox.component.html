@@ -1,0 +1,156 @@
+@if (loadingChannel()) {
+  <section class="page-state" role="status">
+    <span class="state-spinner" aria-hidden="true"></span>
+    <strong>Connecting to the Instagram inbox...</strong>
+  </section>
+} @else if (channelError()) {
+  <section class="page-state error-state" role="alert">
+    <strong>Instagram inbox is unavailable</strong>
+    <p>{{ channelError() }}</p>
+    <button type="button" (click)="retryChannel()">Try again</button>
+  </section>
+} @else {
+  <div class="inbox-shell" [class.mobile-chat-open]="mobileChatOpen()">
+    <app-messenger-conversation-list
+      class="conversation-pane"
+      channelLabel="Instagram"
+      channelSubtitle="Professional account inbox"
+      [conversations]="conversations()"
+      [selectedId]="selectedConversation()?.id ?? null"
+      [loading]="loadingConversations()"
+      [refreshing]="refreshingConversations()"
+      [loadingMore]="loadingMoreConversations()"
+      [errorMessage]="conversationError()"
+      [hasMore]="hasMoreConversations()"
+      (conversationSelected)="selectConversation($event)"
+      (searchChanged)="searchConversations($event)"
+      (loadMore)="loadMoreConversations()"
+      (retry)="retryConversations()"
+    />
+
+    <app-messenger-chat-panel
+      class="chat-pane"
+      channelLabel="Instagram"
+      accountNoun="Instagram account"
+      [maxCharacters]="maxCharacters"
+      [maxUtf8Bytes]="maxUtf8Bytes"
+      [channel]="channel()"
+      [conversation]="selectedConversation()"
+      [messages]="messages()"
+      [loading]="loadingMessages()"
+      [loadingOlder]="loadingOlderMessages()"
+      [hasOlder]="hasOlderMessages()"
+      [errorMessage]="messageError()"
+      [canSend]="
+        auth.hasPermission(permissions.messagesSend) &&
+        channel()?.ready === true &&
+        channel()?.active === true
+      "
+      [canLink]="auth.hasPermission(permissions.messagesSend)"
+      [sendBlockedReason]="
+        auth.hasPermission(permissions.messagesSend) && channel()?.ready !== true
+          ? 'The Instagram send channel is not configured. Ask a workspace administrator to complete the Meta Instagram configuration.'
+          : ''
+      "
+      [replyWindowOpen]="replyWindowOpen()"
+      [draft]="currentDraft()"
+      [sending]="sendingContextKey() === currentContextKey()"
+      [checkingResult]="checkingContextKey() === currentContextKey()"
+      [uncertain]="currentUncertain()"
+      [composerError]="currentSendError()"
+      [composerNotice]="currentSendNotice()"
+      [currentUserId]="auth.user()?.id ?? null"
+      [currentUserName]="auth.user()?.name ?? null"
+      (back)="closeMobileChat()"
+      (loadOlder)="loadOlderMessages()"
+      (retry)="retryMessages()"
+      (draftChange)="updateDraft($event)"
+      (send)="sendReply()"
+      (checkResult)="checkResult()"
+      (linkRequested)="openLinkDialog()"
+    />
+  </div>
+}
+
+@if (linkOpen()) {
+  <div class="dialog-backdrop" (click)="closeLinkDialog()">
+    <section
+      #linkDialog
+      class="link-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="instagram-link-title"
+      (click)="$event.stopPropagation()"
+    >
+      <header>
+        <div>
+          <p>Instagram contact</p>
+          <h2 id="instagram-link-title">Link an existing record</h2>
+        </div>
+        <button
+          type="button"
+          aria-label="Close link dialog"
+          [disabled]="linking()"
+          (click)="closeLinkDialog()"
+        >
+          ×
+        </button>
+      </header>
+      <p class="dialog-intro">
+        Choose an authorized record. PowerLead will not match contacts automatically.
+      </p>
+      <label class="field-label">
+        Record type
+        <select [value]="linkType()" (change)="changeLinkType($any($event.target).value)">
+          <option value="lead">Lead</option>
+          <option value="customer">Customer</option>
+        </select>
+      </label>
+      <label class="field-label">
+        Search accessible {{ linkType() === 'lead' ? 'leads' : 'customers' }}
+        <input
+          type="search"
+          autocomplete="off"
+          placeholder="Search name or email"
+          [formControl]="linkSearch"
+        />
+      </label>
+      <div class="link-results" role="listbox" aria-label="Available records">
+        @if (loadingLinkOptions()) {
+          <p role="status">Loading records...</p>
+        } @else if (!linkOptions().length) {
+          <p>No accessible records found.</p>
+        } @else {
+          @for (option of linkOptions(); track option.id) {
+            <button
+              type="button"
+              role="option"
+              [class.selected]="selectedLinkId() === option.id"
+              [attr.aria-selected]="selectedLinkId() === option.id"
+              (click)="chooseLink(option.id)"
+            >
+              <strong>{{ option.label }}</strong>
+              <span>{{ option.subtitle }}</span>
+            </button>
+          }
+        }
+      </div>
+      @if (linkError()) {
+        <p class="dialog-error" role="alert">{{ linkError() }}</p>
+      }
+      <footer>
+        <button class="secondary" type="button" [disabled]="linking()" (click)="closeLinkDialog()">
+          Cancel
+        </button>
+        <button
+          class="primary"
+          type="button"
+          [disabled]="!selectedLinkId() || linking()"
+          (click)="linkConversation()"
+        >
+          {{ linking() ? 'Linking...' : 'Link record' }}
+        </button>
+      </footer>
+    </section>
+  </div>
+}

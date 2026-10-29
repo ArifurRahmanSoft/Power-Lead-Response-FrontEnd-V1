@@ -13,10 +13,10 @@ import {
 import { RouterLink } from '@angular/router';
 
 import {
-  MessengerChannel,
-  MessengerConversation,
-  MessengerMessage,
-} from '../../models/messenger.models';
+  MessagingChannelView,
+  MessagingConversationView,
+  MessagingMessageView,
+} from '../../../messages/models/messaging-view.models';
 import { MessengerReplyComposerComponent } from '../reply-composer/messenger-reply-composer.component';
 
 @Component({
@@ -28,14 +28,20 @@ import { MessengerReplyComposerComponent } from '../reply-composer/messenger-rep
 export class MessengerChatPanelComponent implements OnChanges, AfterViewChecked {
   @ViewChild('messageScroller') private messageScroller?: ElementRef<HTMLElement>;
 
-  @Input() conversation: MessengerConversation | null = null;
-  @Input() channel: MessengerChannel | null = null;
-  @Input() messages: readonly MessengerMessage[] = [];
+  @Input() conversation: MessagingConversationView | null = null;
+  @Input() channel: MessagingChannelView | null = null;
+  @Input() messages: readonly MessagingMessageView[] = [];
+  @Input() channelLabel = 'Messenger';
+  @Input() accountNoun = 'Facebook Page';
+  @Input() maxCharacters = 2_000;
+  @Input() maxUtf8Bytes: number | null = null;
   @Input() loading = false;
   @Input() loadingOlder = false;
   @Input() hasOlder = false;
   @Input() errorMessage = '';
   @Input() canSend = false;
+  @Input() canLink = false;
+  @Input() sendBlockedReason = '';
   @Input() replyWindowOpen = false;
   @Input() draft = '';
   @Input() sending = false;
@@ -120,21 +126,23 @@ export class MessengerChatPanelComponent implements OnChanges, AfterViewChecked 
     return 'Unlinked contact';
   }
 
-  protected pageDisplayName(): string {
-    const conversationName = this.conversation?.page_display_name?.trim();
-    const channelName = this.channel?.page_display_name?.trim();
-    if (channelName && this.channel?.display_name_available) return channelName;
-    return conversationName || channelName || 'Facebook Page';
+  protected accountDisplayName(): string {
+    const conversationName =
+      this.conversation?.account_display_name?.trim() ||
+      this.conversation?.page_display_name?.trim();
+    const channelName =
+      this.channel?.account_display_name?.trim() || this.channel?.page_display_name?.trim();
+    return conversationName || channelName || this.accountNoun;
   }
 
-  protected actorLabel(message: MessengerMessage): string {
-    const page = this.pageDisplayName();
-    if (message.actor_type !== 'crm_user') return page;
+  protected actorLabel(message: MessagingMessageView): string {
+    const account = this.accountDisplayName();
+    if (message.actor_type !== 'crm_user') return account;
     const performer =
       message.actor_user_id && message.actor_user_id === this.currentUserId
         ? this.currentUserName?.trim()
         : '';
-    return performer ? `${page} · ${performer} (you)` : `${page} · CRM staff`;
+    return performer ? `${account} · ${performer} (you)` : `${account} · CRM staff`;
   }
 
   private isNearBottom(): boolean {

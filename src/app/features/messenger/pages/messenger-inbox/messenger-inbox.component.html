@@ -36,6 +36,7 @@
       [hasOlder]="hasOlderMessages()"
       [errorMessage]="messageError()"
       [canSend]="auth.hasPermission(permissions.messagesSend)"
+      [canLink]="auth.hasPermission(permissions.messagesSend)"
       [replyWindowOpen]="replyWindowOpen()"
       [draft]="currentDraft()"
       [sending]="sendingContextKey() === currentContextKey()"

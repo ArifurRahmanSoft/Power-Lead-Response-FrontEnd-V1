@@ -1,8 +1,16 @@
-<section class="composer" aria-label="Messenger reply composer">
+<section class="composer" [attr.aria-label]="channelLabel + ' reply composer'">
   @if (!canSend) {
-    <p class="composer-note permission-note">
-      You can read this conversation, but you do not have permission to send Messenger replies.
-    </p>
+    @if (disabledReason) {
+      <div class="composer-note window-note" role="status">
+        <strong>Reply unavailable</strong>
+        <p>{{ disabledReason }}</p>
+      </div>
+    } @else {
+      <p class="composer-note permission-note">
+        You can read this conversation, but you do not have permission to send
+        {{ channelLabel }} replies.
+      </p>
+    }
   } @else if (!replyWindowOpen) {
     <div class="composer-note window-note" role="status">
       <strong>Reply unavailable</strong>
@@ -13,7 +21,7 @@
           }
         </ul>
       } @else {
-        <p>The standard Messenger reply window is closed.</p>
+        <p>The standard {{ channelLabel }} reply window is closed.</p>
       }
     </div>
   }
@@ -34,7 +42,7 @@
 
   <div class="compose-row">
     <label class="message-field">
-      <span class="sr-only">Messenger reply</span>
+      <span class="sr-only">{{ channelLabel }} reply</span>
       <textarea
         rows="2"
         [maxLength]="maxCharacters"
@@ -43,9 +51,16 @@
         (input)="updateDraft($any($event.target).value)"
         placeholder="Write a reply..."
       ></textarea>
-      <span class="character-count" [class.over-limit]="draft.length > maxCharacters"
-        >{{ draft.length }} / {{ maxCharacters }}</span
-      >
+      <span
+        class="character-count"
+        [class.over-limit]="
+          draft.length > maxCharacters || (maxUtf8Bytes !== null && utf8Bytes() > maxUtf8Bytes)
+        "
+        >{{ draft.length }} / {{ maxCharacters }}
+        @if (maxUtf8Bytes !== null) {
+          characters · {{ utf8Bytes() }} / {{ maxUtf8Bytes }} bytes
+        }
+      </span>
     </label>
     <button class="send-button" type="button" [disabled]="disabled()" (click)="submit()">
       <span>{{ sending ? 'Sending...' : 'Send' }}</span>

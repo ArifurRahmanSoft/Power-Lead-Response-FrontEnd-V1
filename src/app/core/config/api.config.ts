@@ -1,5 +1,5 @@
 export const API_CONFIG = {
-  isLive: true,
+  isLive: false,
   localApiUrl: 'http://127.0.0.1:8000/api',
   //liveApiUrl: 'https://myproject-v2-2.onrender.com/api',
   liveApiUrl: 'https://power-lead-response-v1.onrender.com/api',

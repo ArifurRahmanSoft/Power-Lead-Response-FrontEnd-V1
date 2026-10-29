@@ -1,7 +1,7 @@
 @if (conversation) {
   <section
     class="chat-panel"
-    aria-label="Messenger conversation with {{ conversation.contact_display_name }}"
+    [attr.aria-label]="channelLabel + ' conversation with ' + conversation.contact_display_name"
   >
     <header class="chat-header">
       <button
@@ -17,8 +17,8 @@
       }}</span>
       <div class="contact-heading">
         <strong>{{ conversation.contact_display_name }}</strong>
-        <span>Conversation via {{ pageDisplayName() }}</span>
-        <small>{{ channel?.active ? 'Connected Facebook Page' : 'Facebook Page' }}</small>
+        <span>Conversation via {{ accountDisplayName() }}</span>
+        <small>{{ channel?.active ? 'Connected ' + accountNoun : accountNoun }}</small>
       </div>
       <div class="linked-record">
         @if (conversation.customer_id) {
@@ -28,7 +28,7 @@
         } @else {
           <span>{{ linkedLabel() }}</span>
         }
-        @if (canSend) {
+        @if (canLink) {
           <button type="button" (click)="linkRequested.emit()">
             {{ conversation.lead_id || conversation.customer_id ? 'Change' : 'Link record' }}
           </button>
@@ -83,7 +83,7 @@
         @if (!messages.length) {
           <div class="chat-state">
             <strong>No stored messages</strong>
-            <p>PowerLead only shows records returned by the Messenger backend.</p>
+            <p>PowerLead only shows records returned by the {{ channelLabel }} backend.</p>
           </div>
         } @else {
           <ol class="message-list" aria-live="polite">
@@ -94,7 +94,7 @@
                   @for (media of message.media; track $index) {
                     <p class="media-placeholder">
                       <span aria-hidden="true">▧</span>
-                      Unsupported Messenger {{ media.type || 'attachment' }} attachment
+                      Unsupported {{ channelLabel }} {{ media.type || 'attachment' }} attachment
                     </p>
                   }
                   <footer>
@@ -127,8 +127,12 @@
     </div>
 
     <app-messenger-reply-composer
+      [channelLabel]="channelLabel"
+      [maxCharacters]="maxCharacters"
+      [maxUtf8Bytes]="maxUtf8Bytes"
       [draft]="draft"
       [canSend]="canSend"
+      [disabledReason]="sendBlockedReason"
       [eligibility]="conversation.eligibility"
       [replyWindowOpen]="replyWindowOpen"
       [sending]="sending"
@@ -142,9 +146,9 @@
     />
   </section>
 } @else {
-  <section class="no-selection" aria-label="No Messenger conversation selected">
+  <section class="no-selection" [attr.aria-label]="'No ' + channelLabel + ' conversation selected'">
     <span aria-hidden="true">✦</span>
     <strong>Select a conversation</strong>
-    <p>Choose a stored Facebook Page conversation to read and reply.</p>
+    <p>Choose a stored {{ channelLabel }} conversation to read and reply.</p>
   </section>
 }

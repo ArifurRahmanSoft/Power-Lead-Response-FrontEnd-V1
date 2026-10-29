@@ -104,13 +104,14 @@ describe('workspace menu policy', () => {
     expect(mail.children?.map((item) => item.path)).toEqual(['/mail/templates']);
   });
 
-  it('shows WhatsApp and Messenger only when the backend grants messages view', () => {
+  it('shows all message inboxes only when the backend grants messages view', () => {
     expect(availableMenuItems('owner', [PERMISSIONS.messagesSend])).toEqual([]);
     const messages = availableMenuItems('owner', [PERMISSIONS.messagesView])[0];
     expect(messages.path).toBe('/messages');
     expect(messages.children?.map((item) => item.path)).toEqual([
       '/messages/whatsapp',
       '/messages/messenger',
+      '/messages/instagram',
     ]);
   });
 });

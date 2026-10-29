@@ -1,9 +1,6 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 
-import {
-  MESSENGER_REPLY_MAX_CHARACTERS,
-  MessengerEligibility,
-} from '../../models/messenger.models';
+import { MessagingEligibilityView } from '../../../messages/models/messaging-view.models';
 
 @Component({
   selector: 'app-messenger-reply-composer',
@@ -13,8 +10,12 @@ import {
 })
 export class MessengerReplyComposerComponent {
   @Input() draft = '';
+  @Input() channelLabel = 'Messenger';
+  @Input() maxCharacters = 2_000;
+  @Input() maxUtf8Bytes: number | null = null;
   @Input() canSend = false;
-  @Input() eligibility: MessengerEligibility | null = null;
+  @Input() disabledReason = '';
+  @Input() eligibility: MessagingEligibilityView | null = null;
   @Input() replyWindowOpen = false;
   @Input() sending = false;
   @Input() checkingResult = false;
@@ -25,7 +26,9 @@ export class MessengerReplyComposerComponent {
   @Output() readonly send = new EventEmitter<void>();
   @Output() readonly checkResult = new EventEmitter<void>();
 
-  protected readonly maxCharacters = MESSENGER_REPLY_MAX_CHARACTERS;
+  protected utf8Bytes(value = this.draft): number {
+    return new TextEncoder().encode(value).length;
+  }
 
   protected updateDraft(value: string): void {
     this.draftChange.emit(value);
@@ -43,7 +46,8 @@ export class MessengerReplyComposerComponent {
       this.checkingResult ||
       this.uncertain ||
       !this.draft.trim() ||
-      this.draft.length > this.maxCharacters
+      this.draft.length > this.maxCharacters ||
+      (this.maxUtf8Bytes !== null && this.utf8Bytes() > this.maxUtf8Bytes)
     );
   }
 }

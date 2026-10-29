@@ -22,6 +22,7 @@ import { AuthService } from '../../../../core/services/auth.service';
 import { CustomersService } from '../../../customers/services/customers.service';
 import { leadErrorDetails } from '../../../leads/services/lead-errors';
 import { LeadsService } from '../../../leads/services/leads.service';
+import { MessagingConversationView } from '../../../messages/models/messaging-view.models';
 import { MessengerChatPanelComponent } from '../../components/chat-panel/messenger-chat-panel.component';
 import { MessengerConversationListComponent } from '../../components/conversation-list/messenger-conversation-list.component';
 import { messengerSendFailure } from '../../messenger-errors';
@@ -239,7 +240,8 @@ export class MessengerInboxComponent implements OnInit, OnDestroy {
     this.loadChannel();
   }
 
-  protected selectConversation(conversation: MessengerConversation): void {
+  protected selectConversation(view: MessagingConversationView): void {
+    const conversation = view as MessengerConversation;
     this.selectedConversation.set(conversation);
     this.mobileChatOpen.set(true);
     this.messages.set([]);

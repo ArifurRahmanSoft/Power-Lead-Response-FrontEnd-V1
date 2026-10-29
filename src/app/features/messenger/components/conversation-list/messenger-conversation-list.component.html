@@ -1,9 +1,9 @@
-<section class="conversation-list" aria-label="Messenger conversations">
+<section class="conversation-list" [attr.aria-label]="channelLabel + ' conversations'">
   <header class="list-header">
     <div>
       <p>Messages</p>
-      <h1>Messenger</h1>
-      <span>Facebook Page inbox</span>
+      <h1>{{ channelLabel }}</h1>
+      <span>{{ channelSubtitle }}</span>
     </div>
     @if (refreshing) {
       <small role="status">Refreshing...</small>
@@ -11,7 +11,7 @@
   </header>
 
   <label class="search-box">
-    <span class="sr-only">Search Messenger conversations</span>
+    <span class="sr-only">Search {{ channelLabel }} conversations</span>
     <span aria-hidden="true">⌕</span>
     <input
       type="search"
@@ -38,7 +38,9 @@
       <div class="state">
         <span class="empty-icon" aria-hidden="true">◌</span>
         <strong>No conversations found</strong>
-        <p>Only Messenger conversations received and stored by PowerLead will appear here.</p>
+        <p>
+          Only {{ channelLabel }} conversations received and stored by PowerLead will appear here.
+        </p>
       </div>
     } @else {
       <div class="conversation-items">

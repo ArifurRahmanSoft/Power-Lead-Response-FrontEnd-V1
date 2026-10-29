@@ -185,6 +185,16 @@ export const routes: Routes = [
           ),
         title: 'Messenger Messages | PowerLead',
       },
+      {
+        path: 'messages/instagram',
+        canActivate: [permissionGuard],
+        data: { requiredPermissions: [PERMISSIONS.messagesView] },
+        loadComponent: () =>
+          import('./features/instagram/pages/instagram-inbox/instagram-inbox.component').then(
+            (component) => component.InstagramInboxComponent,
+          ),
+        title: 'Instagram Messages | PowerLead',
+      },
       { path: 'mail', pathMatch: 'full', redirectTo: 'mail/sender-accounts' },
       {
         path: 'mail/sender-accounts',

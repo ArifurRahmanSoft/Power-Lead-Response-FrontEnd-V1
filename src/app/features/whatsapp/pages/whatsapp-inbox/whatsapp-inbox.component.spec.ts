@@ -185,6 +185,8 @@ describe('WhatsAppInboxComponent', () => {
   });
 
   it('switches providers and ignores a late Twilio list response', () => {
+    flushInitial([], []);
+    (fixture.componentInstance as any).loadConversations(1, false);
     const staleTwilio = http.expectOne(`${baseUrl}/conversations?page=1&size=20`);
     switchProvider('meta');
     const metaList = http.expectOne(`${metaBaseUrl}/conversations?page=1&size=20`);

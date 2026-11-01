@@ -24,9 +24,11 @@
           }
         </select>
       </label>
+    } @else if (channels.length === 1) {
+      <span class="single-channel">{{ currentChannel()?.label }}</span>
     } @else {
       <span class="single-channel">{{
-        currentChannel()?.label || 'Existing Twilio WhatsApp'
+        loading ? 'Checking WhatsApp channels...' : 'No configured WhatsApp channel available'
       }}</span>
     }
     @if (currentChannel()?.senderAddress) {
@@ -36,8 +38,15 @@
           <span> · Account {{ currentChannel()?.accountId }}</span>
         }
       </small>
-    } @else {
+    } @else if (channels.length) {
       <small>Existing workspace Twilio channel</small>
+    }
+    @if (providerDiscoveryErrors.length) {
+      <div class="inline-error" role="alert">
+        @for (error of providerDiscoveryErrors; track error) {
+          <div>{{ error }}</div>
+        }
+      </div>
     }
   </div>
 

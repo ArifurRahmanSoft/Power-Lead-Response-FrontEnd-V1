@@ -15,7 +15,16 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { Observable, debounceTime, distinctUntilChanged, finalize, map } from 'rxjs';
+import {
+  Observable,
+  catchError,
+  debounceTime,
+  distinctUntilChanged,
+  finalize,
+  forkJoin,
+  map,
+  of,
+} from 'rxjs';
 
 import { PERMISSIONS } from '../../../../core/models/auth.models';
 import { AuthService } from '../../../../core/services/auth.service';
@@ -26,6 +35,7 @@ import { WhatsAppChatPanelComponent } from '../../components/chat-panel/whatsapp
 import { WhatsAppConversationListComponent } from '../../components/conversation-list/whatsapp-conversation-list.component';
 import {
   MetaApprovedTemplate,
+  MetaChannelResponse,
   MetaTemplateSendRequest,
   MetaTextSendRequest,
   MetaWhatsAppConversation,
@@ -73,6 +83,11 @@ interface PendingSend {
   request: Readonly<WhatsAppReplyRequest | MetaWhatsAppSendRequest>;
 }
 
+interface ProviderProbe<T> {
+  result: T | null;
+  error: unknown | null;
+}
+
 const MOBILE_MEDIA_QUERY = '(max-width: 760px)';
 const POLL_INTERVAL_MS = 15_000;
 const HIDDEN_POLL_INTERVAL_MS = 60_000;
@@ -106,8 +121,9 @@ export class WhatsAppInboxComponent implements OnInit, OnDestroy {
   @ViewChild('newChatDialog') private newChatDialog?: ElementRef<HTMLElement>;
 
   protected readonly permissions = PERMISSIONS;
-  protected readonly channels = signal<readonly WhatsAppChannelOption[]>([TWILIO_CHANNEL]);
+  protected readonly channels = signal<readonly WhatsAppChannelOption[]>([]);
   protected readonly selectedProvider = signal<WhatsAppProvider>('twilio');
+  protected readonly providerDiscoveryErrors = signal<readonly string[]>([]);
   protected readonly currentChannel = computed(
     () => this.channels().find((channel) => channel.provider === this.selectedProvider()) ?? null,
   );
@@ -206,8 +222,7 @@ export class WhatsAppInboxComponent implements OnInit, OnDestroy {
   protected readonly hasOlderMessages = computed(() => this.messagePage < this.messagePages);
 
   ngOnInit(): void {
-    this.discoverMetaChannel();
-    this.loadConversations(1, false);
+    this.initializeProviders();
     this.linkSearch.valueChanges
       .pipe(debounceTime(300), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {
@@ -600,28 +615,78 @@ export class WhatsAppInboxComponent implements OnInit, OnDestroy {
     this.loadTemplates(1, []);
   }
 
-  private discoverMetaChannel(): void {
-    this.meta
-      .getChannel()
+  private initializeProviders(): void {
+    const preferredProvider = this.selectedProvider();
+    const twilioProbe = this.listConversationsRequest('twilio', 1, '').pipe(
+      map((result): ProviderProbe<ApiDataResponse<WhatsAppConversationPage>> => ({
+        result,
+        error: null,
+      })),
+      catchError((error: unknown) =>
+        of<ProviderProbe<ApiDataResponse<WhatsAppConversationPage>>>({ result: null, error }),
+      ),
+    );
+    const metaProbe = this.meta.getChannel().pipe(
+      map((result): ProviderProbe<MetaChannelResponse> => ({ result, error: null })),
+      catchError((error: unknown) =>
+        of<ProviderProbe<MetaChannelResponse>>({ result: null, error }),
+      ),
+    );
+
+    forkJoin({ twilio: twilioProbe, meta: metaProbe })
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: ({ data }) => {
-          if (!data.active) return;
-          const metaChannel: WhatsAppChannelOption = {
+      .subscribe(({ twilio, meta }) => {
+        const availableChannels: WhatsAppChannelOption[] = [];
+        if (meta.result?.data.active) {
+          availableChannels.push({
             provider: 'meta',
-            id: data.id,
+            id: meta.result.data.id,
             label: 'Meta WhatsApp',
-            senderAddress: data.sender_address,
-            accountId: data.waba_id,
-            channelId: data.phone_number_id,
-          };
-          this.channels.set([metaChannel, TWILIO_CHANNEL]);
-        },
-        error: () => undefined,
+            senderAddress: meta.result.data.sender_address,
+            accountId: meta.result.data.waba_id,
+            channelId: meta.result.data.phone_number_id,
+          });
+        }
+        if (twilio.result) availableChannels.push(TWILIO_CHANNEL);
+
+        const discoveryErrors: string[] = [];
+        if (twilio.error) {
+          discoveryErrors.push(
+            `Twilio WhatsApp: ${this.errorMessage(twilio.error, 'Unable to discover the workspace Twilio channel.')}`,
+          );
+        }
+        if (meta.error) {
+          discoveryErrors.push(
+            `Meta WhatsApp: ${this.errorMessage(meta.error, 'Unable to discover the workspace Meta channel.')}`,
+          );
+        }
+        this.providerDiscoveryErrors.set(discoveryErrors);
+        this.channels.set(availableChannels);
+
+        const selectedChannel =
+          availableChannels.find((channel) => channel.provider === preferredProvider) ??
+          availableChannels[0];
+        if (!selectedChannel) {
+          this.loadingConversations.set(false);
+          return;
+        }
+
+        if (this.selectedProvider() !== selectedChannel.provider) {
+          this.selectedProvider.set(selectedChannel.provider);
+          this.channelEpoch += 1;
+        }
+        this.resetVisibleInbox();
+        if (selectedChannel.provider === 'twilio' && twilio.result) {
+          this.loadingConversations.set(false);
+          this.applyConversationPage(twilio.result.data, 1, false);
+        } else {
+          this.loadConversations(1, false);
+        }
       });
   }
 
   private loadConversations(page: number, refresh: boolean): void {
+    if (!this.channels().some((channel) => channel.provider === this.selectedProvider())) return;
     if (this.conversationRequestActive) {
       if (!refresh) this.pendingConversationLoad = { page, refresh };
       return;
@@ -652,22 +717,7 @@ export class WhatsAppInboxComponent implements OnInit, OnDestroy {
       .subscribe({
         next: ({ data }) => {
           if (!this.isCurrentChannel(epoch, provider) || requestedSearch !== this.search) return;
-          this.conversationPage = refresh ? Math.max(this.conversationPage, data.page) : data.page;
-          this.conversationPages = data.pages;
-          if (page === 1 && !refresh) this.conversations.set(data.items);
-          else if (page === 1)
-            this.conversations.set(this.mergeConversations(data.items, this.conversations()));
-          else this.conversations.set(this.mergeConversations(this.conversations(), data.items));
-          const selected = this.selectedConversation();
-          if (selected) {
-            const updated = data.items.find((item) => item.id === selected.id);
-            if (updated) {
-              this.selectedConversation.set(updated);
-              this.ensureTemplatesFor(updated);
-            }
-          } else if (!this.isMobile() && data.items[0]) {
-            this.selectConversation(data.items[0]);
-          }
+          this.applyConversationPage(data, page, refresh);
         },
         error: (error: unknown) => {
           if (this.isCurrentChannel(epoch, provider)) {
@@ -677,6 +727,29 @@ export class WhatsAppInboxComponent implements OnInit, OnDestroy {
           }
         },
       });
+  }
+
+  private applyConversationPage(
+    data: WhatsAppConversationPage,
+    page: number,
+    refresh: boolean,
+  ): void {
+    this.conversationPage = refresh ? Math.max(this.conversationPage, data.page) : data.page;
+    this.conversationPages = data.pages;
+    if (page === 1 && !refresh) this.conversations.set(data.items);
+    else if (page === 1)
+      this.conversations.set(this.mergeConversations(data.items, this.conversations()));
+    else this.conversations.set(this.mergeConversations(this.conversations(), data.items));
+    const selected = this.selectedConversation();
+    if (selected) {
+      const updated = data.items.find((item) => item.id === selected.id);
+      if (updated) {
+        this.selectedConversation.set(updated);
+        this.ensureTemplatesFor(updated);
+      }
+    } else if (!this.isMobile() && data.items[0]) {
+      this.selectConversation(data.items[0]);
+    }
   }
 
   private loadMessages(conversationId: string, page: number, refresh: boolean): void {

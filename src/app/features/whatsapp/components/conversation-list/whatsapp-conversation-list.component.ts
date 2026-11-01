@@ -28,6 +28,7 @@ export class WhatsAppConversationListComponent implements OnInit {
   @Input() hasMore = false;
   @Input() channels: readonly WhatsAppChannelOption[] = [];
   @Input() selectedProvider: WhatsAppProvider = 'twilio';
+  @Input() providerDiscoveryErrors: readonly string[] = [];
   @Input() canStartMetaChat = false;
   @Output() readonly conversationSelected = new EventEmitter<WhatsAppConversation>();
   @Output() readonly searchChanged = new EventEmitter<string>();

@@ -14,7 +14,7 @@ describe('pendingChangesGuard', () => {
     confirm.mockRestore();
   });
 
-  it('requires confirmation before discarding unsaved template changes', () => {
+  it('requires confirmation before discarding unsaved changes', () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const result = (pendingChangesGuard as Function)(
       { hasUnsavedChanges: () => true },
@@ -23,9 +23,7 @@ describe('pendingChangesGuard', () => {
       null,
     );
     expect(result).toBe(false);
-    expect(confirm).toHaveBeenCalledWith(
-      'You have unsaved template changes. Leave without saving?',
-    );
+    expect(confirm).toHaveBeenCalledWith('You have unsaved changes. Leave without saving?');
     confirm.mockRestore();
   });
 });

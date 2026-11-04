@@ -477,7 +477,8 @@ button:disabled {
 .row-actions button {
   color: #9b403a;
 }
-.row-actions .send-row-action {
+.row-actions .send-row-action,
+.row-actions .convert-row-action {
   color: #376252;
 }
 .email-status-badge {
@@ -568,6 +569,19 @@ button:disabled {
   text-transform: uppercase;
   white-space: nowrap;
 }
+.source-lead {
+  color: #17623c;
+  background: #daf1df;
+}
+.source-lead-label {
+  display: block;
+  margin-top: 0.3rem;
+  color: #68766d;
+  font-size: 0.72rem;
+}
+.source-unknown {
+  color: #89928c;
+}
 .status-new {
   color: #315e75;
   background: #e7f1f6;
@@ -652,7 +666,8 @@ button:disabled {
   background: #fff5f3;
   font-size: 0.8rem;
 }
-.lead-alert a {
+.lead-alert a,
+.lead-notice a {
   color: inherit;
   font-weight: 800;
 }
@@ -789,6 +804,16 @@ button:disabled {
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
+.voice-differences .voice-sync-conflict {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #6e5b2c;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: normal;
+  line-height: 1.45;
+  text-transform: none;
+}
 .voice-confirmation-actions {
   display: flex;
   justify-content: flex-end;
@@ -878,6 +903,29 @@ button:disabled {
   font-weight: 750;
   line-height: 1.35;
 }
+.customer-whatsapp-field {
+  display: grid;
+  gap: 0.45rem;
+}
+.lead-form .same-as-contact-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: fit-content;
+  cursor: pointer;
+}
+.lead-form .same-as-contact-control input {
+  width: 1rem;
+  min-height: 1rem;
+  margin: 0;
+  padding: 0;
+  accent-color: #2f6f5b;
+}
+.lead-form input[readonly] {
+  color: #526259;
+  background: #f2f5f1;
+  cursor: not-allowed;
+}
 .required-indicator {
   color: #a64039;
   font-weight: 850;
@@ -943,6 +991,34 @@ button:disabled {
 .read-only-meta strong {
   color: #244438;
   font-size: 0.86rem;
+}
+.lead-lifecycle-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.55rem !important;
+}
+.lead-lifecycle-summary > span:first-child {
+  color: #6d7b72;
+  font-size: 0.68rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+.lifecycle-capability-summary {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e4e9e1;
+}
+.lifecycle-capability-summary h3 {
+  margin: 0 0 0.55rem;
+  color: #30483c;
+  font-size: 0.78rem;
+}
+.lifecycle-blocking {
+  margin: 0.4rem 0 0;
+  color: #6c5a3d;
+  font-size: 0.72rem;
+  line-height: 1.5;
 }
 .lead-detail-tabs {
   display: flex;

@@ -1,4 +1,4 @@
-<a class="back-link" routerLink="/leads">← Back to leads</a>
+<a class="back-link" [attr.href]="returnUrl">← Back to leads</a>
 @if (loading()) {
   <div class="lead-state" role="status">Loading lead…</div>
 } @else if (permissionDenied()) {
@@ -20,6 +20,10 @@
       <p>
         {{ current.designation || 'No designation'
         }}{{ current.company ? ' at ' + current.company : '' }}
+      </p>
+      <p class="lead-lifecycle-summary">
+        <span>Lifecycle status</span>
+        <span class="lead-badge status-{{ current.status }}">{{ label(current.status) }}</span>
       </p>
     </div>
     <div class="header-actions">
@@ -49,7 +53,7 @@
       }
       @if (canConvert()) {
         <button class="primary-button" type="button" (click)="openConversion()">
-          Convert to customer
+          Set as Customer
         </button>
       }
       @if (auth.hasPermission(permissions.leadsDelete)) {
@@ -104,6 +108,10 @@
             <div>
               <dt>Phone</dt>
               <dd>{{ current.phone || 'Not provided' }}</dd>
+            </div>
+            <div>
+              <dt>WhatsApp Number</dt>
+              <dd>{{ current.whatsapp_number || 'Not provided' }}</dd>
             </div>
             <div>
               <dt>Location</dt>
@@ -220,12 +228,14 @@
                 <p class="eyebrow">Customer lifecycle</p>
                 <h2 id="customer-lifecycle-title">Converted to customer</h2>
               </div>
-              <a
-                class="secondary-button button-link"
-                [routerLink]="['/customers', lifecycle.customer.id]"
-              >
-                View customer
-              </a>
+              @if (auth.hasPermission(permissions.customersView)) {
+                <a
+                  class="secondary-button button-link"
+                  [routerLink]="['/customers', lifecycle.customer.id]"
+                >
+                  View customer
+                </a>
+              }
             </div>
             <dl class="detail-grid">
               <div>
@@ -238,7 +248,7 @@
               </div>
               <div>
                 <dt>Purchased service</dt>
-                <dd>{{ lifecycle.conversion.purchased_service }}</dd>
+                <dd>{{ lifecycle.conversion.purchased_service || 'Not provided' }}</dd>
               </div>
               <div>
                 <dt>Conversion reference</dt>
@@ -257,7 +267,7 @@
               </div>
               <div class="full">
                 <dt>Conversion reason</dt>
-                <dd class="preserve-lines">{{ lifecycle.conversion.reason }}</dd>
+                <dd class="preserve-lines">{{ lifecycle.conversion.reason || 'Not provided' }}</dd>
               </div>
             </dl>
             @if (conversionResult(); as result) {
@@ -619,7 +629,7 @@
           <h2>Internal handling</h2>
           <dl>
             <div>
-              <dt>Status</dt>
+              <dt>Lifecycle status</dt>
               <dd>
                 <span class="lead-badge status-{{ current.status }}">{{
                   label(current.status)
@@ -647,6 +657,24 @@
               <dd>{{ current.row_version }}</dd>
             </div>
           </dl>
+          <div class="lifecycle-capability-summary">
+            <h3>Lifecycle actions</h3>
+            @if (capabilityContractMissing()) {
+              <p class="lifecycle-blocking" role="alert">
+                <b>Lifecycle capabilities unavailable.</b> The API response did not include the
+                current engagement and conversion capability fields, so those actions are hidden.
+              </p>
+            }
+            @if (!canMarkContacted() && contactedBlockingMessage(); as reason) {
+              <p class="lifecycle-blocking"><b>Mark as Contacted unavailable.</b> {{ reason }}</p>
+            }
+            @if (!canConvert() && conversionBlockingMessage(); as reason) {
+              <p class="lifecycle-blocking"><b>Conversion unavailable.</b> {{ reason }}</p>
+            }
+            @if (!current.can_mark_engaged && engagementBlockingMessage(); as reason) {
+              <p class="lifecycle-blocking"><b>Mark as Engaged unavailable.</b> {{ reason }}</p>
+            }
+          </div>
           @if (auth.hasPermission(permissions.leadsUpdate)) {
             <div class="status-transition">
               <h3>Change priority</h3>
@@ -756,125 +784,82 @@
 }
 
 @if (lead(); as current) {
-  @if (conversionModalOpen()) {
+  @if (contactModalOpen()) {
     <div class="lead-modal-backdrop">
       <section
-        class="lead-modal activity-modal conversion-modal"
+        class="lead-modal activity-modal"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="conversion-modal-title"
+        aria-labelledby="contacted-modal-title"
       >
         <p class="eyebrow">Explicit lifecycle change</p>
-        <h2 id="conversion-modal-title">Convert {{ current.first_name }} to a customer?</h2>
+        <h2 id="contacted-modal-title">
+          Mark {{ current.first_name }} {{ current.last_name }} as contacted?
+        </h2>
         <p class="activity-disclaimer">
-          This creates or links a customer relationship and stops lead-acquisition automation. It
-          does not send an email, SMS, or other automatic message.
+          This changes the lifecycle status from {{ label(current.status) }} to Contacted. It does
+          not send a message and does not create or fabricate a contact log or contact attempt.
         </p>
-        @if (conversionError()) {
-          <p class="lead-alert" role="alert">{{ conversionError() }}</p>
+        @if (errorMessage()) {
+          <p class="lead-alert" role="alert">{{ errorMessage() }}</p>
         }
-        <form class="activity-form" [formGroup]="conversionForm" (ngSubmit)="saveConversion()">
+        <div class="lead-form-actions">
+          <button
+            class="secondary-button"
+            type="button"
+            [disabled]="savingStatus()"
+            (click)="closeContacted()"
+          >
+            Cancel
+          </button>
+          <button
+            class="primary-button"
+            type="button"
+            [disabled]="savingStatus()"
+            (click)="markContacted()"
+          >
+            {{ savingStatus() ? 'Updating…' : 'Confirm Mark as Contacted' }}
+          </button>
+        </div>
+      </section>
+    </div>
+  }
+}
+
+@if (lead(); as current) {
+  @if (engagementModalOpen()) {
+    <div class="lead-modal-backdrop">
+      <section
+        class="lead-modal activity-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="engagement-modal-title"
+      >
+        <p class="eyebrow">Explicit lifecycle change</p>
+        <h2 id="engagement-modal-title">
+          Mark {{ current.first_name }} {{ current.last_name }} as engaged?
+        </h2>
+        <p class="activity-disclaimer">
+          This changes the lifecycle status from {{ label(current.status) }} to Engaged. It does not
+          record a contact attempt or send an email, SMS, or other message.
+        </p>
+        @if (engagementError()) {
+          <p class="lead-alert" role="alert">{{ engagementError() }}</p>
+        }
+        <form class="activity-form" (ngSubmit)="markEngaged()">
           <div class="activity-form-grid">
-            <label>
-              Purchased service
-              <input formControlName="purchasedService" maxlength="200" />
-              @if (conversionFieldError('purchased_service'); as error) {
-                <small class="field-error">{{ error }}</small>
-              }
-            </label>
-            <label>
-              Conversion reference
-              <input
-                formControlName="reference"
-                maxlength="255"
-                placeholder="Order or agreement ID"
-              />
-              @if (conversionFieldError('reference'); as error) {
-                <small class="field-error">{{ error }}</small>
-              }
-            </label>
             <label class="full">
-              Conversion reason
+              Engagement reason
               <textarea
-                formControlName="reason"
+                [formControl]="engagementReason"
                 maxlength="1000"
-                rows="3"
-                placeholder="Why is this lead being converted?"
+                rows="4"
+                placeholder="Why is this lead now actively engaged?"
               ></textarea>
-              @if (conversionFieldError('reason'); as error) {
-                <small class="field-error">{{ error }}</small>
-              }
-            </label>
-            <fieldset class="full assignment-options">
-              <legend>Customer record</legend>
-              <label>
-                <input type="radio" formControlName="duplicateResolution" value="create_new" />
-                <span><b>Create new</b><small>Create a customer from this lead.</small></span>
-              </label>
-              <label>
-                <input type="radio" formControlName="duplicateResolution" value="link_existing" />
-                <span
-                  ><b>Link existing</b
-                  ><small>Attach this conversion to an existing customer.</small></span
-                >
-              </label>
-            </fieldset>
-            @if (conversionForm.controls.duplicateResolution.value === 'link_existing') {
-              <label class="full">
-                Existing customer
-                <select formControlName="existingCustomerId">
-                  <option value="" disabled>
-                    {{ customerOptionsLoading() ? 'Loading customers…' : 'Select a customer' }}
-                  </option>
-                  @if (
-                    conversionForm.controls.existingCustomerId.value && !customerOptions().length
-                  ) {
-                    <option [value]="conversionForm.controls.existingCustomerId.value">
-                      Existing customer · {{ conversionForm.controls.existingCustomerId.value }}
-                    </option>
-                  }
-                  @for (customer of customerOptions(); track customer.id) {
-                    <option [value]="customer.id">
-                      {{ customer.first_name }} {{ customer.last_name }} · {{ customer.email }}
-                    </option>
-                  }
-                </select>
-                @if (!auth.hasPermission(permissions.customersView)) {
-                  <small class="field-help">
-                    Customer browsing is unavailable for this role; duplicate detection can still
-                    offer an eligible link.
-                  </small>
-                }
-                @if (conversionFieldError('existing_customer_id'); as error) {
-                  <small class="field-error">{{ error }}</small>
-                }
-              </label>
-            }
-            <fieldset class="full assignment-options">
-              <legend>Open lead-acquisition tasks</legend>
-              <label>
-                <input type="radio" formControlName="pendingTaskDisposition" value="cancel" />
-                <span><b>Cancel</b><small>Cancel pending contact and follow-up tasks.</small></span>
-              </label>
-              <label>
-                <input type="radio" formControlName="pendingTaskDisposition" value="retain" />
-                <span><b>Retain</b><small>Keep intentional acquisition tasks open.</small></span>
-              </label>
-            </fieldset>
-            <label class="full">
-              Pending-task reason
-              <textarea formControlName="pendingTaskReason" maxlength="1000" rows="3"></textarea>
-              @if (conversionFieldError('pending_task_reason'); as error) {
-                <small class="field-error">{{ error }}</small>
-              }
-            </label>
-            <label class="full confirmation-check">
-              <input type="checkbox" formControlName="confirmed" />
-              <span>
-                I confirm this lifecycle change, the customer record choice, and the pending-task
-                disposition.
-              </span>
-              @if (conversionFieldError('confirmed'); as error) {
+              <small>
+                This reason is retained in lifecycle history; it is not a contact activity.
+              </small>
+              @if (engagementReasonError(); as error) {
                 <small class="field-error">{{ error }}</small>
               }
             </label>
@@ -883,16 +868,70 @@
             <button
               class="secondary-button"
               type="button"
-              [disabled]="conversionSaving()"
-              (click)="closeConversion()"
+              [disabled]="engagementSaving()"
+              (click)="closeEngagement()"
             >
-              Keep as lead
+              Cancel
             </button>
-            <button class="primary-button" type="submit" [disabled]="conversionSaving()">
-              {{ conversionSaving() ? 'Converting…' : 'Confirm conversion' }}
+            <button class="primary-button" type="submit" [disabled]="engagementSaving()">
+              {{ engagementSaving() ? 'Updating…' : 'Confirm Mark as Engaged' }}
             </button>
           </div>
         </form>
+      </section>
+    </div>
+  }
+}
+
+@if (lead(); as current) {
+  @if (conversionModalOpen()) {
+    <div class="lead-modal-backdrop">
+      <section
+        class="lead-modal activity-modal conversion-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="conversion-modal-title"
+      >
+        <p class="eyebrow">Set as customer</p>
+        <h2 id="conversion-modal-title">
+          Set {{ current.first_name }} {{ current.last_name }} as a customer?
+        </h2>
+        <p class="activity-disclaimer">
+          This record will move from Leads to Customers. Its history will be preserved.
+        </p>
+        @if (conversionError()) {
+          <p class="lead-alert" role="alert">{{ conversionError() }}</p>
+        }
+        @if (duplicateCustomerId()) {
+          <p>
+            Linking preserves this lead's history without creating a second customer record. This
+            retry will only happen after you confirm below.
+          </p>
+        }
+        <div class="lead-form-actions">
+          <button
+            class="secondary-button"
+            type="button"
+            [disabled]="conversionSaving()"
+            (click)="closeConversion()"
+          >
+            Cancel
+          </button>
+          <button
+            class="primary-button"
+            type="button"
+            [disabled]="conversionSaving()"
+            (click)="saveConversion()"
+          >
+            @if (conversionSaving()) {
+              Converting…
+            } @else if (duplicateCustomerId()) {
+              Link Existing Customer
+            } @else {
+              Set as Customer
+            }
+          </button>
+        </div>
       </section>
     </div>
   }

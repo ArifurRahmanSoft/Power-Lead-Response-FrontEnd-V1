@@ -10,13 +10,21 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { finalize } from 'rxjs';
+import {
+  NavigationEnd,
+  NavigationStart,
+  Router,
+  RouterLink,
+  RouterLinkActive,
+  RouterOutlet,
+} from '@angular/router';
+import { Subscription, filter, finalize } from 'rxjs';
 
 import { availableMenuItems } from '../../core/config/menu.config';
 import { AuthService } from '../../core/services/auth.service';
 
 const MOBILE_MEDIA_QUERY = '(max-width: 760px)';
+const SHELL_BODY_CLASS = 'workspace-shell-active';
 const FOCUSABLE_ELEMENTS =
   'a[href], button:not([disabled]), select:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
@@ -35,6 +43,7 @@ export class WorkspaceShellComponent implements OnDestroy {
   @ViewChild('mobileMenuToggle') private mobileMenuToggle?: ElementRef<HTMLButtonElement>;
   @ViewChild('mobileDrawer') private mobileDrawer?: ElementRef<HTMLElement>;
   @ViewChild('drawerClose') private drawerClose?: ElementRef<HTMLButtonElement>;
+  @ViewChild('workspaceContent') private workspaceContent?: ElementRef<HTMLElement>;
 
   protected readonly switchingWorkspace = signal(false);
   protected readonly workspaceError = signal('');
@@ -44,6 +53,9 @@ export class WorkspaceShellComponent implements OnDestroy {
   );
   private previousBodyOverflow = '';
   private bodyScrollLocked = false;
+  private restoreContentScroll = false;
+  private readonly contentScrollPositions = new Map<string, number>();
+  private readonly routerEvents = new Subscription();
 
   protected readonly menuItems = computed(() => {
     const role = this.auth.role();
@@ -53,8 +65,31 @@ export class WorkspaceShellComponent implements OnDestroy {
     }));
   });
 
+  constructor() {
+    if (this.isBrowser) this.document.body.classList.add(SHELL_BODY_CLASS);
+    this.routerEvents.add(
+      this.router.events
+        .pipe(
+          filter(
+            (event): event is NavigationStart | NavigationEnd =>
+              event instanceof NavigationStart || event instanceof NavigationEnd,
+          ),
+        )
+        .subscribe((event) => {
+          if (event instanceof NavigationStart) {
+            this.rememberContentScroll(this.router.url);
+            this.restoreContentScroll = event.navigationTrigger === 'popstate';
+            return;
+          }
+          this.scheduleContentScroll(event.urlAfterRedirects);
+        }),
+    );
+  }
+
   ngOnDestroy(): void {
     this.unlockBodyScroll();
+    this.routerEvents.unsubscribe();
+    if (this.isBrowser) this.document.body.classList.remove(SHELL_BODY_CLASS);
   }
 
   @HostListener('window:resize')
@@ -167,6 +202,44 @@ export class WorkspaceShellComponent implements OnDestroy {
     if (!this.bodyScrollLocked) return;
     this.document.body.style.overflow = this.previousBodyOverflow;
     this.bodyScrollLocked = false;
+  }
+
+  private rememberContentScroll(url: string): void {
+    const content = this.workspaceContent?.nativeElement;
+    if (!content) return;
+    this.contentScrollPositions.set(url, content.scrollTop);
+    if (this.contentScrollPositions.size > 50) {
+      const oldestUrl = this.contentScrollPositions.keys().next().value;
+      if (oldestUrl) this.contentScrollPositions.delete(oldestUrl);
+    }
+  }
+
+  private scheduleContentScroll(url: string): void {
+    if (!this.isBrowser) return;
+    const restore = this.restoreContentScroll;
+    this.restoreContentScroll = false;
+    window.requestAnimationFrame(() => {
+      const content = this.workspaceContent?.nativeElement;
+      if (!content) return;
+      const fragment = this.router.parseUrl(url).fragment;
+      if (fragment && this.scrollToFragment(content, fragment)) return;
+      content.scrollTop = restore ? (this.contentScrollPositions.get(url) ?? 0) : 0;
+    });
+  }
+
+  private scrollToFragment(content: HTMLElement, fragment: string): boolean {
+    let targetId = fragment;
+    try {
+      targetId = decodeURIComponent(fragment);
+    } catch {
+      // Keep the router-provided fragment when it is not valid percent-encoding.
+    }
+    const target = this.document.getElementById(targetId);
+    if (!target || !content.contains(target)) return false;
+    const contentTop = content.getBoundingClientRect().top;
+    const targetTop = target.getBoundingClientRect().top;
+    content.scrollTop += targetTop - contentTop;
+    return true;
   }
 
   private deferFocus(callback: () => void): void {

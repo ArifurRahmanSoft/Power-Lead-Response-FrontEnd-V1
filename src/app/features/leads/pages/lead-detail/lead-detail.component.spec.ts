@@ -3,7 +3,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { WritableSignal, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 
 import { API_CONFIG } from '../../../../core/config/api.config';
 import { AuthUser, PERMISSIONS, PermissionKey } from '../../../../core/models/auth.models';
@@ -26,7 +26,7 @@ interface ExposedLeadDetail {
   replyForm: FormGroup;
   bookingForm: FormGroup;
   assignmentForm: FormGroup;
-  conversionForm: FormGroup;
+  engagementReason: FormControl<string>;
   priorityControl: FormControl<string>;
   cancellationNotes: FormControl<string>;
   activityPage(): number;
@@ -41,6 +41,18 @@ interface ExposedLeadDetail {
   }>;
   taskRefreshRequest(): number;
   conversionResult(): LeadConversionResult | null;
+  conversionSaving(): boolean;
+  conversionError(): string;
+  duplicateCustomerId(): string | null;
+  engagementModalOpen(): boolean;
+  engagementSaving(): boolean;
+  engagementError(): string;
+  errorMessage(): string;
+  contactModalOpen(): boolean;
+  savingStatus(): boolean;
+  canConvert(): boolean;
+  canMarkContacted(): boolean;
+  nextStatuses(): string[];
   outboundStatusLabel(status: string): string;
   outboundFailureReason(message: OutboundMessage): string;
   openLogContact(): void;
@@ -50,12 +62,20 @@ interface ExposedLeadDetail {
   openReschedule(booking: LeadBooking): void;
   openCancelBooking(booking: LeadBooking): void;
   openAssignment(): void;
+  openConversion(): void;
+  closeConversion(): void;
+  openEngagement(): void;
+  closeEngagement(): void;
+  openContacted(): void;
+  closeContacted(): void;
   saveActivity(): void;
   saveReply(): void;
   saveBooking(): void;
   cancelBooking(): void;
   saveAssignment(): void;
   saveConversion(): void;
+  markEngaged(): void;
+  markContacted(): void;
   updatePriority(): void;
   loadActivities(page: number): void;
 }
@@ -85,6 +105,10 @@ const lead = {
   updated_at: '2026-10-12T08:00:00Z',
   updated_by: 'user-1',
   row_version: 1,
+  can_convert_to_customer: true,
+  conversion_blocking_reason: null,
+  can_mark_engaged: false,
+  engagement_blocking_reason: 'lead_must_be_contacted',
 };
 
 function activity(overrides: Partial<LeadActivity> = {}): LeadActivity {
@@ -168,6 +192,7 @@ describe('LeadDetailComponent activity timeline', () => {
   let fixture: ComponentFixture<LeadDetailComponent>;
   let component: ExposedLeadDetail;
   let http: HttpTestingController;
+  let router: Router;
   let permissions: Set<PermissionKey>;
 
   beforeEach(() => {
@@ -197,6 +222,8 @@ describe('LeadDetailComponent activity timeline', () => {
       ],
     });
     http = TestBed.inject(HttpTestingController);
+    router = TestBed.inject(Router);
+    vi.spyOn(router, 'navigateByUrl').mockResolvedValue(true);
     fixture = TestBed.createComponent(LeadDetailComponent);
     component = fixture.componentInstance as unknown as ExposedLeadDetail;
     fixture.detectChanges();
@@ -217,6 +244,16 @@ describe('LeadDetailComponent activity timeline', () => {
       .flush({ success: true, data: { items, page, size: 100, total } });
     fixture.detectChanges();
   }
+
+  it('displays the dedicated WhatsApp number in contact details', () => {
+    flushTimeline();
+    component.lead.set({ ...lead, whatsapp_number: '+8801712345678' } as Lead);
+    fixture.detectChanges();
+
+    const contact = fixture.nativeElement.querySelector('.detail-card') as HTMLElement;
+    expect(contact.textContent).toContain('WhatsApp Number');
+    expect(contact.textContent).toContain('+8801712345678');
+  });
 
   it('blocks only explicitly denied lead consent without calling unknown or empty consent granted', () => {
     flushTimeline();
@@ -558,33 +595,19 @@ describe('LeadDetailComponent activity timeline', () => {
     expect(component.taskRefreshRequest()).toBe(1);
   });
 
-  it('converts an engaged lead explicitly and displays the backend result without messaging', () => {
+  it('converts a NEW lead with only row_version and prevents duplicate clicks', () => {
     flushTimeline();
     const raw = fixture.componentInstance as any;
-    raw.lead.set({ ...lead, status: 'engaged', service_requested: 'Website Design' });
-    component.conversionForm.patchValue({
-      purchasedService: 'Website Design',
-      reference: 'ORDER-1042',
-      reason: 'Signed service agreement',
-      duplicateResolution: 'create_new',
-      pendingTaskDisposition: 'cancel',
-      pendingTaskReason: 'Acquisition completed after conversion',
-      confirmed: true,
-    });
+    raw.lead.set({ ...lead, status: 'new', can_convert_to_customer: true });
 
     component.saveConversion();
+    component.saveConversion();
 
-    const request = http.expectOne(`${API_CONFIG.baseUrl}/leads/lead-1/convert`);
+    const requests = http.match(`${API_CONFIG.baseUrl}/leads/lead-1/convert`);
+    expect(requests).toHaveLength(1);
+    const request = requests[0];
     expect(request.request.method).toBe('POST');
-    expect(request.request.body).toEqual({
-      row_version: 1,
-      purchased_service: 'Website Design',
-      reference: 'ORDER-1042',
-      reason: 'Signed service agreement',
-      duplicate_resolution: 'create_new',
-      pending_acquisition_task_disposition: 'cancel',
-      pending_task_reason: 'Acquisition completed after conversion',
-    });
+    expect(request.request.body).toEqual({ row_version: 1 });
     expect(request.request.url).not.toMatch(/mail|message|send/);
     request.flush({
       success: true,
@@ -612,12 +635,12 @@ describe('LeadDetailComponent activity timeline', () => {
           customer_id: 'customer-1',
           converted_at: '2026-10-14T06:00:00Z',
           converted_by: 'user-1',
-          purchased_service: 'Website Design',
-          reference: 'ORDER-1042',
-          reason: 'Signed service agreement',
+          purchased_service: null,
+          reference: null,
+          reason: null,
           duplicate_resolution: 'create_new',
           pending_task_disposition: 'cancel',
-          pending_task_reason: 'Acquisition completed after conversion',
+          pending_task_reason: 'Lead converted to customer',
           cancelled_nurture_job_count: 2,
           affected_task_count: 1,
           source_consent_status: 'unknown',
@@ -626,28 +649,254 @@ describe('LeadDetailComponent activity timeline', () => {
         },
       },
     });
-    http
-      .expectOne(`${API_CONFIG.baseUrl}/leads/lead-1`)
-      .flush({ success: true, data: { ...lead, status: 'converted', row_version: 2 } });
-
     expect(component.conversionResult()?.customer.id).toBe('customer-1');
     expect(component.conversionResult()?.conversion.cancelled_nurture_job_count).toBe(2);
     expect(component.taskRefreshRequest()).toBe(1);
+    expect(router.navigateByUrl).toHaveBeenCalledWith('/leads', {
+      state: {
+        leadConversion: {
+          message: 'Lead converted to customer. The lead list and selection were refreshed.',
+          customerId: null,
+        },
+      },
+    });
     http.expectNone((candidate) => /mail|messages|send/.test(candidate.url));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).not.toContain('View customer');
+  });
+
+  it('shows the simple confirmation and supports cancellation without submitting', () => {
+    flushTimeline();
+    permissions.add(PERMISSIONS.customersConvert);
+    component.lead.set({
+      ...lead,
+      status: 'contacted',
+      company: 'Acme',
+      can_convert_to_customer: true,
+      conversion_blocking_reason: null,
+    } as Lead);
+    component.openConversion();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).toContain('Set Jane Doe as a customer?');
+    expect(fixture.nativeElement.textContent).toContain(
+      'This record will move from Leads to Customers. Its history will be preserved.',
+    );
+    component.closeConversion();
+
+    http.expectNone(`${API_CONFIG.baseUrl}/leads/lead-1/convert`);
+  });
+
+  it('does not retry automatically after an uncertain network failure', () => {
+    flushTimeline();
+    component.lead.set({ ...lead, status: 'contacted' } as Lead);
+
+    component.saveConversion();
+    http
+      .expectOne(`${API_CONFIG.baseUrl}/leads/lead-1/convert`)
+      .error(new ProgressEvent('network error'));
+
+    expect(component.conversionSaving()).toBe(false);
+    expect(component.conversionError()).toContain('outcome is uncertain');
+    expect(component.conversionError()).toContain('not repeated automatically');
+    http.expectNone(`${API_CONFIG.baseUrl}/leads/lead-1/convert`);
+  });
+
+  it('shows backend lifecycle status, capabilities, and blocking reasons', () => {
+    flushTimeline();
+    component.lead.set({
+      ...lead,
+      status: 'disqualified',
+      can_convert_to_customer: false,
+      conversion_blocking_reason: 'lead_disqualified',
+    } as Lead);
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Lifecycle status');
+    expect(text).toContain('Conversion unavailable');
+    expect(text).toContain('Disqualified leads cannot be set as customers');
+    expect(text).toContain('Mark as Engaged unavailable');
+    expect(text).toContain('must be contacted');
+    expect(text).not.toContain('Set as Customer');
+    expect(component.canMarkContacted()).toBe(false);
+    http.expectNone(`${API_CONFIG.baseUrl}/leads/lead-1/engage`);
+  });
+
+  it('marks a new lead contacted only after explicit authorized confirmation', () => {
+    flushTimeline();
+    permissions.add(PERMISSIONS.leadsStatus);
+    component.lead.set({ ...lead } as Lead);
+    fixture.detectChanges();
+
+    expect(component.canMarkContacted()).toBe(true);
+    expect(component.nextStatuses()).not.toContain('contacted');
+    const markButton = Array.from(
+      fixture.nativeElement.querySelectorAll('button') as NodeListOf<HTMLButtonElement>,
+    ).find((button) => button.textContent?.trim() === 'Mark as Contacted');
+    expect(markButton).toBeUndefined();
+
+    component.openContacted();
+    fixture.detectChanges();
+    expect(component.contactModalOpen()).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('does not send a message');
+    expect(fixture.nativeElement.textContent).toContain(
+      'does not create or fabricate a contact log',
+    );
+    component.closeContacted();
+    http.expectNone(`${API_CONFIG.baseUrl}/leads/lead-1`);
+
+    component.openContacted();
+    component.markContacted();
+    component.markContacted();
+    const requests = http.match(`${API_CONFIG.baseUrl}/leads/lead-1`);
+    expect(requests).toHaveLength(1);
+    expect(requests[0].request.method).toBe('PATCH');
+    expect(requests[0].request.body).toEqual({ row_version: 1, status: 'contacted' });
+    requests[0].flush({
+      success: true,
+      message: 'Lead updated',
+      data: {
+        ...lead,
+        status: 'contacted',
+        row_version: 2,
+        can_mark_engaged: true,
+        engagement_blocking_reason: null,
+      },
+    });
+
+    expect(component.savingStatus()).toBe(false);
+    expect(component.contactModalOpen()).toBe(false);
+    expect(component.lead()?.status).toBe('contacted');
+    expect(component.lead()?.can_mark_engaged).toBe(true);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).not.toContain('Mark as Engaged');
+    http.expectNone((candidate) => /activities|mail|messages|send/.test(candidate.url));
+  });
+
+  it('refreshes lifecycle state after a stale Mark as Contacted request', () => {
+    flushTimeline();
+    permissions.add(PERMISSIONS.leadsStatus);
+    component.lead.set({ ...lead } as Lead);
+    component.openContacted();
+    component.markContacted();
+
+    http
+      .expectOne(`${API_CONFIG.baseUrl}/leads/lead-1`)
+      .flush(
+        { detail: 'Lead was modified by another request' },
+        { status: 409, statusText: 'Conflict' },
+      );
+    http.expectOne(`${API_CONFIG.baseUrl}/leads/lead-1`).flush({
+      success: true,
+      data: {
+        ...lead,
+        status: 'contacted',
+        row_version: 2,
+        can_mark_engaged: true,
+        engagement_blocking_reason: null,
+      },
+    });
+
+    expect(component.contactModalOpen()).toBe(false);
+    expect(component.lead()?.status).toBe('contacted');
+    expect(component.lead()?.can_mark_engaged).toBe(true);
+    expect(component.errorMessage()).toContain('latest lifecycle status and capabilities');
+  });
+
+  it('marks engaged only through explicit confirmation and refreshes conversion capability', () => {
+    flushTimeline();
+    component.lead.set({
+      ...lead,
+      status: 'contacted',
+      row_version: 4,
+      can_mark_engaged: true,
+      engagement_blocking_reason: null,
+    } as Lead);
+    expect(component.nextStatuses()).not.toContain('engaged');
+
+    component.openEngagement();
+    fixture.detectChanges();
+    expect(component.engagementModalOpen()).toBe(true);
+    expect(fixture.nativeElement.textContent).toContain('does not record a contact attempt');
+    component.engagementReason.setValue('Confirmed active buying interest');
+    component.markEngaged();
+    component.markEngaged();
+
+    const requests = http.match(`${API_CONFIG.baseUrl}/leads/lead-1/engage`);
+    expect(requests).toHaveLength(1);
+    expect(requests[0].request.body).toEqual({
+      row_version: 4,
+      reason: 'Confirmed active buying interest',
+    });
+    requests[0].flush({
+      success: true,
+      message: 'Lead marked engaged',
+      data: {
+        ...lead,
+        status: 'engaged',
+        row_version: 5,
+        can_mark_engaged: false,
+        engagement_blocking_reason: 'already_engaged',
+        can_convert_to_customer: true,
+        conversion_blocking_reason: null,
+      },
+    });
+
+    expect(component.engagementSaving()).toBe(false);
+    expect(component.engagementModalOpen()).toBe(false);
+    expect(component.lead()?.status).toBe('engaged');
+    expect(component.canConvert()).toBe(true);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Set as Customer');
+    http.expectNone((candidate) => /activities|mail|messages|send/.test(candidate.url));
+  });
+
+  it('requires an engagement reason, supports cancellation, and refreshes stale capability', () => {
+    flushTimeline();
+    component.lead.set({
+      ...lead,
+      status: 'contacted',
+      row_version: 4,
+      can_mark_engaged: true,
+      engagement_blocking_reason: null,
+    } as Lead);
+    expect(component.nextStatuses()).not.toContain('engaged');
+    component.openEngagement();
+    component.markEngaged();
+    http.expectNone(`${API_CONFIG.baseUrl}/leads/lead-1/engage`);
+    component.closeEngagement();
+    expect(component.engagementModalOpen()).toBe(false);
+
+    component.openEngagement();
+    component.engagementReason.setValue('Confirmed active buying interest');
+    component.markEngaged();
+    http
+      .expectOne(`${API_CONFIG.baseUrl}/leads/lead-1/engage`)
+      .flush(
+        { detail: 'Lead was modified by another request' },
+        { status: 409, statusText: 'Conflict' },
+      );
+    http.expectOne(`${API_CONFIG.baseUrl}/leads/lead-1`).flush({
+      success: true,
+      data: {
+        ...lead,
+        status: 'contacted',
+        row_version: 5,
+        can_mark_engaged: false,
+        engagement_blocking_reason: 'engagement_not_authorized',
+      },
+    });
+
+    expect(component.lead()?.row_version).toBe(5);
+    expect(component.lead()?.can_mark_engaged).toBe(false);
+    expect(component.engagementError()).toContain('latest lifecycle status and capabilities');
   });
 
   it('offers the backend duplicate customer for an explicit confirmed retry', () => {
     flushTimeline();
     const raw = fixture.componentInstance as any;
-    raw.lead.set({ ...lead, status: 'engaged' });
-    component.conversionForm.patchValue({
-      purchasedService: 'Support',
-      reason: 'Purchased support',
-      duplicateResolution: 'create_new',
-      pendingTaskDisposition: 'retain',
-      pendingTaskReason: 'Keep the intentional callback',
-      confirmed: true,
-    });
+    raw.lead.set({ ...lead, status: 'contacted' });
 
     component.saveConversion();
     http.expectOne(`${API_CONFIG.baseUrl}/leads/lead-1/convert`).flush(
@@ -660,8 +909,25 @@ describe('LeadDetailComponent activity timeline', () => {
       { status: 409, statusText: 'Conflict' },
     );
 
-    expect(component.conversionForm.get('duplicateResolution')?.value).toBe('link_existing');
-    expect(component.conversionForm.get('existingCustomerId')?.value).toBe('customer-existing');
-    expect(component.conversionForm.get('confirmed')?.value).toBe(false);
+    expect(component.duplicateCustomerId()).toBe('customer-existing');
+    http.expectNone(`${API_CONFIG.baseUrl}/leads/lead-1/convert`);
+
+    component.saveConversion();
+    const retry = http.expectOne(`${API_CONFIG.baseUrl}/leads/lead-1/convert`);
+    expect(retry.request.body).toEqual({
+      row_version: 1,
+      duplicate_resolution: 'link_existing',
+      existing_customer_id: 'customer-existing',
+    });
+    retry.flush({
+      success: true,
+      message: 'Lead converted to customer',
+      data: {
+        idempotent_replay: false,
+        customer: { id: 'customer-existing' },
+        conversion: { id: 'conversion-1' },
+      },
+    });
+    expect(router.navigateByUrl).toHaveBeenCalledWith('/leads', expect.any(Object));
   });
 });

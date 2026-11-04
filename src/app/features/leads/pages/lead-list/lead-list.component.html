@@ -110,7 +110,12 @@
 </form>
 
 @if (notice()) {
-  <p class="lead-notice" role="status">{{ notice() }}</p>
+  <p class="lead-notice" role="status">
+    <span>{{ notice() }}</span>
+    @if (convertedCustomerId(); as customerId) {
+      <a [routerLink]="['/customers', customerId]">View Customer</a>
+    }
+  </p>
 }
 @if (errorMessage() && !permissionDenied()) {
   <p class="lead-alert" role="alert">{{ errorMessage() }}</p>
@@ -141,6 +146,17 @@
           Select all {{ total() }} matching leads
         </button>
       }
+      <button
+        class="primary-button"
+        type="button"
+        [disabled]="!selectedConversionLead()"
+        [attr.title]="
+          selectedConversionLead() ? null : 'Select exactly one eligible lead to set as a customer.'
+        "
+        (click)="openSelectedAsCustomer()"
+      >
+        Set as Customer
+      </button>
       @if (auth.hasPermission(permissions.mailSend)) {
         <button class="primary-button" type="button" (click)="sendSelected()">Send Email</button>
         <button
@@ -219,10 +235,8 @@
             </th>
             <th>Email Status</th>
             <th>Last Email Type</th>
-            <th>Last Sent</th>
             <th>SMS Status</th>
             <th>Message Type</th>
-            <th>Last SMS</th>
             <th><span class="visually-hidden">Actions</span></th>
           </tr>
         </thead>
@@ -260,37 +274,17 @@
                 </span>
               </td>
               <td>{{ emailStageLabel(lead) }}</td>
-              <td class="email-time-cell">
-                @if (lastEmailAt(lead); as emailAt) {
-                  {{ emailAt | date: 'short' }}
-                } @else {
-                  —
-                }
-              </td>
               <td>
                 <span class="sms-status-badge sms-state-{{ smsSummary(lead).provider_status }}">
                   {{ smsStatusLabel(lead) }}
                 </span>
               </td>
               <td>{{ smsTypeLabel(lead) }}</td>
-              <td class="email-time-cell">
-                @if (smsSummary(lead).last_successful_at; as smsAt) {
-                  {{ smsAt | date: 'short' }}
-                } @else {
-                  —
-                }
-              </td>
               <td>
                 <div class="row-actions">
-                  <a [routerLink]="['/leads', lead.id]">View</a>
-                  @if (auth.hasPermission(permissions.mailSend)) {
-                    <button class="send-row-action" type="button" (click)="sendToLead(lead)">
-                      Send Email
-                    </button>
-                    <button class="send-row-action" type="button" (click)="sendSmsToLead(lead)">
-                      Send Message
-                    </button>
-                  }
+                  <a [routerLink]="['/leads', lead.id]" [queryParams]="leadDetailQueryParams()"
+                    >View</a
+                  >
                   @if (auth.hasPermission(permissions.leadsUpdate)) {
                     <a [routerLink]="['/leads', lead.id, 'edit']">Edit</a>
                   }
@@ -316,6 +310,51 @@
     </div>
   }
 </section>
+
+@if (conversionCandidate(); as lead) {
+  <div class="lead-modal-backdrop">
+    <section class="lead-modal" role="dialog" aria-modal="true" aria-labelledby="conversion-title">
+      <p class="eyebrow">Set as customer</p>
+      <h2 id="conversion-title">Set {{ lead.first_name }} {{ lead.last_name }} as a customer?</h2>
+      <p>This record will move from Leads to Customers. Its history will be preserved.</p>
+
+      @if (conversionError()) {
+        <p class="lead-alert" role="alert">{{ conversionError() }}</p>
+      }
+
+      @if (duplicateCustomerId()) {
+        <p>
+          Linking preserves this lead's history without creating a second customer record. This
+          retry will only happen after you confirm below.
+        </p>
+      }
+      <div class="lead-form-actions">
+        <button
+          class="secondary-button"
+          type="button"
+          [disabled]="mutating()"
+          (click)="closeSetAsCustomer()"
+        >
+          Cancel
+        </button>
+        <button
+          class="primary-button"
+          type="button"
+          [disabled]="mutating()"
+          (click)="setAsCustomer()"
+        >
+          @if (mutating()) {
+            Converting…
+          } @else if (duplicateCustomerId()) {
+            Link Existing Customer
+          } @else {
+            Set as Customer
+          }
+        </button>
+      </div>
+    </section>
+  </div>
+}
 
 <app-bulk-send-email
   [selectionMode]="composeMode()"

@@ -1,6 +1,6 @@
 import { Component, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
 
 import { PERMISSIONS, PermissionKey } from '../../core/models/auth.models';
@@ -34,10 +34,16 @@ class FakeAuthService {
 describe('WorkspaceShellComponent mobile navigation', () => {
   let fixture: ComponentFixture<WorkspaceShellComponent>;
   let originalBodyOverflow: string;
+  let router: Router;
 
   beforeEach(async () => {
     originalBodyOverflow = document.body.style.overflow;
+    document.body.classList.remove('workspace-shell-active');
     setViewportWidth(390);
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      callback(0);
+      return 1;
+    });
 
     await TestBed.configureTestingModule({
       imports: [WorkspaceShellComponent],
@@ -56,13 +62,22 @@ describe('WorkspaceShellComponent mobile navigation', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(WorkspaceShellComponent);
+    router = TestBed.inject(Router);
     fixture.detectChanges();
   });
 
   afterEach(() => {
     fixture.destroy();
+    expect(document.body.classList.contains('workspace-shell-active')).toBe(false);
     document.body.style.overflow = originalBodyOverflow;
+    document.body.classList.remove('workspace-shell-active');
     setViewportWidth(1024);
+    vi.restoreAllMocks();
+  });
+
+  it('locks document scrolling only while the authenticated shell is active', () => {
+    expect(document.body.classList.contains('workspace-shell-active')).toBe(true);
+    expect(getElement('.workspace-content')).toBeTruthy();
   });
 
   it('opens as a modal drawer and locks background scrolling', () => {
@@ -115,6 +130,39 @@ describe('WorkspaceShellComponent mobile navigation', () => {
     expect(sidebar.getAttribute('role')).toBeNull();
     expect(fixture.nativeElement.querySelector('.mobile-backdrop')).toBeNull();
     expect(document.body.style.overflow).toBe(originalBodyOverflow);
+  });
+
+  it('resets the main content container on forward route navigation', async () => {
+    await router.navigateByUrl('/overview');
+    fixture.detectChanges();
+    const content = getElement<HTMLElement>('.workspace-content');
+    content.scrollTop = 320;
+
+    await router.navigateByUrl('/leads');
+    fixture.detectChanges();
+
+    expect(content.scrollTop).toBe(0);
+  });
+
+  it('scrolls anchors inside the main container without moving the document', () => {
+    const content = getElement<HTMLElement>('.workspace-content');
+    const target = document.createElement('section');
+    target.id = 'customer-history';
+    content.append(target);
+    content.scrollTop = 40;
+    vi.spyOn(content, 'getBoundingClientRect').mockReturnValue({
+      top: 80,
+    } as DOMRect);
+    vi.spyOn(target, 'getBoundingClientRect').mockReturnValue({
+      top: 280,
+    } as DOMRect);
+    const shell = fixture.componentInstance as unknown as {
+      scrollToFragment(container: HTMLElement, fragment: string): boolean;
+    };
+
+    expect(shell.scrollToFragment(content, 'customer-history')).toBe(true);
+    expect(content.scrollTop).toBe(240);
+    expect(document.documentElement.scrollTop).toBe(0);
   });
 
   function getElement<T extends HTMLElement = HTMLElement>(selector: string): T {

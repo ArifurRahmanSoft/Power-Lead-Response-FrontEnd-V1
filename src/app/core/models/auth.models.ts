@@ -32,6 +32,8 @@ export const PERMISSIONS = {
   leadsAssign: 'leads.assign',
   leadsStatus: 'leads.status',
   customersView: 'customers.view',
+  customersCreate: 'customers.create',
+  customersUpdate: 'customers.update',
   customersConvert: 'customers.convert',
   workflowsView: 'workflows.view',
   workflowsCreate: 'workflows.create',

@@ -32,6 +32,12 @@
               <strong>{{ conflict.label }}</strong>
               <span><small>Current</small>{{ conflict.current }}</span>
               <span><small>Voice draft</small>{{ conflict.proposed }}</span>
+              @if (conflict.synchronizationConflict) {
+                <small class="voice-sync-conflict">
+                  “Same as contact number” is on. Confirming will turn it off before applying this
+                  different WhatsApp number.
+                </small>
+              }
             </div>
           }
         </div>
@@ -121,6 +127,35 @@
             <small class="field-error">{{ fieldError('phone') }}</small>
           }
         </label>
+        <div class="customer-whatsapp-field">
+          <label class="same-as-contact-control">
+            <input
+              type="checkbox"
+              [checked]="sameAsContact()"
+              (change)="toggleSameAsContact($event)"
+            />
+            <span>Same as contact number</span>
+          </label>
+          <label>
+            WhatsApp Number
+            <input
+              type="tel"
+              formControlName="whatsappNumber"
+              maxlength="32"
+              autocomplete="tel"
+              placeholder="+8801712345678"
+              [readOnly]="sameAsContact()"
+              [attr.aria-readonly]="sameAsContact()"
+            />
+            <small>
+              Use the international format beginning with + and country code. A local format can be
+              normalized when Country is provided.
+            </small>
+            @if (fieldError('whatsappNumber')) {
+              <small class="field-error">{{ fieldError('whatsappNumber') }}</small>
+            }
+          </label>
+        </div>
 
         <label
           >Service Requested<input
@@ -151,11 +186,11 @@
             maxlength="120"
             autocomplete="address-level1"
         /></label>
-        <label class="full"
+        <label
           >Country<input
             formControlName="country"
             list="lead-country-options"
-            placeholder="Bangladesh"
+            placeholder="United State"
             autocomplete="country-name"
           />
           <datalist id="lead-country-options">
@@ -163,7 +198,7 @@
               <option [value]="country.value"></option>
             }
           </datalist>
-          <small>Search and select a country name, for example Bangladesh.</small>
+          <small>Search and select a country name, for example United State.</small>
           @if (fieldError('country')) {
             <small class="field-error">{{ fieldError('country') }}</small>
           }
@@ -201,7 +236,7 @@
             <small class="field-error">{{ fieldError('serviceRequested') }}</small>
           }
         </label> -->
-           <label class="full"
+        <label class="full"
           >Designation<input
             formControlName="designation"
             maxlength="160"
@@ -377,7 +412,9 @@
                   <option [value]="user.id">{{ user.display_name }} — {{ user.email }}</option>
                 }
               </select>
-              <small class="field-help">Only eligible users returned by the workspace are shown.</small>
+              <small class="field-help"
+                >Only eligible users returned by the workspace are shown.</small
+              >
               @if (assigneeResolutionMessage(); as resolutionMessage) {
                 <small class="field-help" role="status">{{ resolutionMessage }}</small>
               }
@@ -420,7 +457,9 @@
               </label>
               <label>
                 <input type="radio" formControlName="pendingTaskDisposition" value="retain" />
-                <span><b>Retain</b><small>Keep pending tasks with their current owners.</small></span>
+                <span
+                  ><b>Retain</b><small>Keep pending tasks with their current owners.</small></span
+                >
               </label>
               <label>
                 <input type="radio" formControlName="pendingTaskDisposition" value="cancel" />
@@ -440,18 +479,6 @@
           ><small>Consent defaults to Unknown and is never inferred.</small></label
         >
         <label>Consent Reference<input formControlName="consentReference" maxlength="255" /></label>
-        <label class="full"
-          >Consent Evidence<textarea
-            formControlName="consentEvidence"
-            rows="3"
-            maxlength="4000"
-          ></textarea>
-        </label>
-        @if (form.hasError('consentProofRequired') && (form.dirty || form.touched)) {
-          <p class="field-error full" role="alert">
-            Granted consent requires evidence or a reference.
-          </p>
-        }
         <label class="full"
           >Notes<textarea formControlName="notes" rows="5" maxlength="10000"></textarea>
         </label>

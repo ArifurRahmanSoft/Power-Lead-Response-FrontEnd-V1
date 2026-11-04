@@ -27,6 +27,11 @@ body {
 body {
   min-width: 320px;
 }
+body.workspace-shell-active {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
 button,
 input {
   font: inherit;

@@ -8,6 +8,8 @@ import { catchError, debounceTime, distinctUntilChanged, map, of, switchMap } fr
 import { Customer } from '../../models/customer.models';
 import { CustomersService } from '../../services/customers.service';
 import { leadErrorDetails } from '../../../leads/services/lead-errors';
+import { PERMISSIONS } from '../../../../core/models/auth.models';
+import { AuthService } from '../../../../core/services/auth.service';
 
 @Component({
   selector: 'app-customer-list',
@@ -19,6 +21,8 @@ export class CustomerListComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  protected readonly auth = inject(AuthService);
+  protected readonly permissions = PERMISSIONS;
 
   protected readonly items = signal<Customer[]>([]);
   protected readonly loading = signal(false);
@@ -92,5 +96,17 @@ export class CustomerListComponent {
       queryParams: { page },
       queryParamsHandling: 'merge',
     });
+  }
+
+  protected isLeadDerived(customer: Customer): boolean {
+    return customer.source_type === 'lead';
+  }
+
+  protected isDirect(customer: Customer): boolean {
+    return customer.source_type === 'direct';
+  }
+
+  protected sourceLeadLabel(customer: Customer): string {
+    return customer.source_lead_label?.trim() || '';
   }
 }

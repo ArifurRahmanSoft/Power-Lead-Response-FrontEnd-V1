@@ -58,15 +58,7 @@ const relatedFieldsValidator: ValidatorFn = (control: AbstractControl): Validati
   const period = String(control.get('revenuePeriod')?.value || '').trim();
   const revenueIncomplete =
     [amount, currency, period].some(Boolean) && ![amount, currency, period].every(Boolean);
-  const granted = control.get('consentStatus')?.value === 'granted';
-  const hasConsentProof = Boolean(
-    String(control.get('consentEvidence')?.value || '').trim() ||
-    String(control.get('consentReference')?.value || '').trim(),
-  );
-  return {
-    ...(revenueIncomplete ? { revenueIncomplete: true } : {}),
-    ...(granted && !hasConsentProof ? { consentProofRequired: true } : {}),
-  };
+  return revenueIncomplete ? { revenueIncomplete: true } : null;
 };
 
 const VOICE_FIELD_FORM_MAP = {
@@ -74,6 +66,7 @@ const VOICE_FIELD_FORM_MAP = {
   last_name: 'lastName',
   email: 'email',
   phone: 'phone',
+  whatsapp_number: 'whatsappNumber',
   country: 'country',
   designation: 'designation',
   company: 'company',
@@ -99,6 +92,7 @@ const VOICE_FIELD_LABELS: Record<LeadVoiceFieldName, string> = {
   last_name: 'Last Name',
   email: 'Email',
   phone: 'Phone',
+  whatsapp_number: 'WhatsApp Number',
   country: 'Country',
   designation: 'Designation',
   company: 'Company',
@@ -124,6 +118,7 @@ interface VoiceOverwriteConflict {
   label: string;
   current: string;
   proposed: string;
+  synchronizationConflict?: boolean;
 }
 
 @Component({
@@ -155,6 +150,7 @@ export class LeadFormComponent implements OnChanges {
   protected readonly voiceNotice = signal('');
   protected readonly voiceConflicts = signal<VoiceOverwriteConflict[]>([]);
   protected readonly pendingVoicePatch = signal<LeadVoiceFormValues | null>(null);
+  protected readonly sameAsContact = signal(false);
   protected readonly countryOptions = COUNTRY_OPTIONS;
   protected readonly currencyOptions = CURRENCY_OPTIONS;
   protected readonly emailStatuses = EMAIL_STATUSES;
@@ -187,6 +183,10 @@ export class LeadFormComponent implements OnChanges {
       }),
       emailStatus: new FormControl<EmailStatus>('unknown', { nonNullable: true }),
       phone: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(80)] }),
+      whatsappNumber: new FormControl('', {
+        nonNullable: true,
+        validators: [Validators.maxLength(32)],
+      }),
       city: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(120)] }),
       state: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(120)] }),
       linkedinUrl: new FormControl('', {
@@ -245,10 +245,6 @@ export class LeadFormComponent implements OnChanges {
         nonNullable: true,
       }),
       consentStatus: new FormControl<ConsentStatus>('unknown', { nonNullable: true }),
-      consentEvidence: new FormControl('', {
-        nonNullable: true,
-        validators: [Validators.maxLength(4000)],
-      }),
       consentReference: new FormControl('', {
         nonNullable: true,
         validators: [Validators.maxLength(255)],
@@ -264,6 +260,13 @@ export class LeadFormComponent implements OnChanges {
     this.form.controls.assignedUserId.valueChanges
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(() => this.syncAssignmentValidators());
+    this.form.controls.phone.valueChanges
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((phone) => {
+        if (!this.sameAsContact()) return;
+        this.form.controls.whatsappNumber.setValue(phone, { emitEvent: false });
+        this.form.controls.whatsappNumber.markAsDirty();
+      });
     if (
       this.auth.hasPermission(PERMISSIONS.leadsAssign) &&
       this.auth.hasPermission(PERMISSIONS.settingsUsersView)
@@ -334,6 +337,7 @@ export class LeadFormComponent implements OnChanges {
       designation: 'Designation',
       company: 'Company',
       phone: 'Phone',
+      whatsappNumber: 'WhatsApp number',
       city: 'City',
       state: 'State',
       industry: 'Industry',
@@ -341,7 +345,6 @@ export class LeadFormComponent implements OnChanges {
       revenueAmount: 'Revenue amount',
       revenueCurrency: 'Revenue currency',
       notes: 'Notes',
-      consentEvidence: 'Consent evidence',
       consentReference: 'Consent reference',
       assignmentReason: 'Assignment reason',
       pendingTaskDisposition: 'Pending task choice',
@@ -405,17 +408,68 @@ export class LeadFormComponent implements OnChanges {
       : 'You can use Fill by Voice and edit this draft, but your role does not have permission to create leads.';
   }
 
+  protected toggleSameAsContact(event: Event): void {
+    const checkbox = event.target as HTMLInputElement;
+    if (!checkbox.checked) {
+      this.sameAsContact.set(false);
+      return;
+    }
+    const phone = this.form.controls.phone.value;
+    const whatsapp = this.form.controls.whatsappNumber.value;
+    if (
+      whatsapp.trim() &&
+      whatsapp.trim() !== phone.trim() &&
+      typeof window !== 'undefined' &&
+      !window.confirm('Replace the current WhatsApp number with the contact number?')
+    ) {
+      checkbox.checked = false;
+      return;
+    }
+    this.sameAsContact.set(true);
+    this.form.controls.whatsappNumber.setValue(phone);
+    this.form.controls.whatsappNumber.markAsDirty();
+  }
+
   protected applyVoiceDraft(draft: LeadVoiceFormValues): void {
     this.voiceNotice.set('');
     const conflicts: VoiceOverwriteConflict[] = [];
+    const proposedPhone = draft.phone?.trim();
+    const synchronizedWhatsApp = proposedPhone || this.form.controls.phone.value.trim();
     for (const [field, rawValue] of Object.entries(draft) as [LeadVoiceFieldName, string][]) {
       const proposed = rawValue.trim();
       if (!proposed) continue;
       const control = this.form.controls[VOICE_FIELD_FORM_MAP[field]] as AbstractControl;
       const current = String(control.value ?? '').trim();
+      if (
+        field === 'whatsapp_number' &&
+        this.sameAsContact() &&
+        proposed !== synchronizedWhatsApp
+      ) {
+        conflicts.push({
+          field,
+          label: VOICE_FIELD_LABELS[field],
+          current: synchronizedWhatsApp,
+          proposed,
+          synchronizationConflict: true,
+        });
+        continue;
+      }
       if (current && current !== proposed) {
         conflicts.push({ field, label: VOICE_FIELD_LABELS[field], current, proposed });
       }
+    }
+    if (
+      this.sameAsContact() &&
+      proposedPhone &&
+      proposedPhone !== this.form.controls.phone.value.trim() &&
+      !draft.whatsapp_number
+    ) {
+      conflicts.push({
+        field: 'whatsapp_number',
+        label: 'WhatsApp Number (synchronized)',
+        current: this.form.controls.whatsappNumber.value.trim(),
+        proposed: proposedPhone,
+      });
     }
     if (conflicts.length) {
       this.pendingVoicePatch.set(draft);
@@ -431,6 +485,13 @@ export class LeadFormComponent implements OnChanges {
     const blankOnly: LeadVoiceFormValues = {};
     for (const [field, value] of Object.entries(pending) as [LeadVoiceFieldName, string][]) {
       const control = this.form.controls[VOICE_FIELD_FORM_MAP[field]] as AbstractControl;
+      if (
+        field === 'whatsapp_number' &&
+        this.sameAsContact() &&
+        value.trim() !== this.form.controls.phone.value.trim()
+      ) {
+        continue;
+      }
       if (!String(control.value ?? '').trim()) blankOnly[field] = value;
     }
     this.commitVoicePatch(blankOnly);
@@ -438,7 +499,11 @@ export class LeadFormComponent implements OnChanges {
 
   protected confirmVoiceOverwrite(): void {
     const pending = this.pendingVoicePatch();
-    if (pending) this.commitVoicePatch(pending);
+    if (!pending) return;
+    if (this.voiceConflicts().some((conflict) => conflict.synchronizationConflict)) {
+      this.sameAsContact.set(false);
+    }
+    this.commitVoicePatch(pending);
   }
 
   protected cancelVoiceApply(): void {
@@ -459,6 +524,7 @@ export class LeadFormComponent implements OnChanges {
       country: optional(countryName(value.country)),
       email_status: value.emailStatus,
       phone: optional(value.phone),
+      whatsapp_number: optional(value.whatsappNumber),
       city: optional(value.city),
       state: optional(value.state),
       linkedin_url: optional(value.linkedinUrl),
@@ -475,7 +541,6 @@ export class LeadFormComponent implements OnChanges {
       revenue_period: value.revenuePeriod || null,
       notes: optional(value.notes),
       consent_status: value.consentStatus,
-      consent_evidence: optional(value.consentEvidence),
       consent_reference: optional(value.consentReference),
     };
     if (includeAssignment && this.canAssign()) {
@@ -508,7 +573,13 @@ export class LeadFormComponent implements OnChanges {
   }
 
   private populate(lead: Lead | null): void {
-    if (!lead) return;
+    this.sameAsContact.set(false);
+    if (!lead) {
+      this.originalAssigneeId.set(null);
+      this.form.reset();
+      this.syncAssignmentValidators();
+      return;
+    }
     this.originalAssigneeId.set(lead.assigned_user_id);
     this.form.reset({
       firstName: lead.first_name,
@@ -519,6 +590,7 @@ export class LeadFormComponent implements OnChanges {
       country: countryName(lead.country),
       emailStatus: lead.email_status,
       phone: lead.phone || '',
+      whatsappNumber: lead.whatsapp_number || '',
       city: lead.city || '',
       state: lead.state || '',
       linkedinUrl: lead.linkedin_url || '',
@@ -538,7 +610,6 @@ export class LeadFormComponent implements OnChanges {
       assignmentReason: '',
       pendingTaskDisposition: 'transfer',
       consentStatus: lead.consent_status,
-      consentEvidence: lead.consent_evidence || '',
       consentReference: lead.consent_reference || '',
     });
     this.syncAssignmentValidators();
@@ -608,6 +679,7 @@ export class LeadFormComponent implements OnChanges {
       country: 'country',
       email_status: 'emailStatus',
       phone: 'phone',
+      whatsapp_number: 'whatsappNumber',
       city: 'city',
       state: 'state',
       linkedin_url: 'linkedinUrl',
@@ -627,7 +699,6 @@ export class LeadFormComponent implements OnChanges {
       assignment_reason: 'assignmentReason',
       pending_task_disposition: 'pendingTaskDisposition',
       consent_status: 'consentStatus',
-      consent_evidence: 'consentEvidence',
       consent_reference: 'consentReference',
     };
     const serverFieldErrors: Record<string, string> = {};

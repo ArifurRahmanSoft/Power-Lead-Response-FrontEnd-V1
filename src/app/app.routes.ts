@@ -130,6 +130,30 @@ export const routes: Routes = [
         title: 'Customers | PowerLead',
       },
       {
+        path: 'customers/new',
+        canActivate: [permissionGuard],
+        canDeactivate: [pendingChangesGuard],
+        data: { requiredPermissions: [PERMISSIONS.customersCreate] },
+        loadComponent: () =>
+          import('./features/customers/pages/customer-form-page/customer-form-page.component').then(
+            (component) => component.CustomerFormPageComponent,
+          ),
+        title: 'Create customer | PowerLead',
+      },
+      {
+        path: 'customers/:id/edit',
+        canActivate: [permissionGuard],
+        canDeactivate: [pendingChangesGuard],
+        data: {
+          requiredPermissions: [PERMISSIONS.customersView, PERMISSIONS.customersUpdate],
+        },
+        loadComponent: () =>
+          import('./features/customers/pages/customer-form-page/customer-form-page.component').then(
+            (component) => component.CustomerFormPageComponent,
+          ),
+        title: 'Edit customer | PowerLead',
+      },
+      {
         path: 'customers/:id',
         canActivate: [permissionGuard],
         data: { requiredPermissions: [PERMISSIONS.customersView] },

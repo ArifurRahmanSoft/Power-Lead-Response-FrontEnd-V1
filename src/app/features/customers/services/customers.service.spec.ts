@@ -33,27 +33,46 @@ describe('CustomersService', () => {
     detail.flush({ success: true, data: { conversions: [] } });
   });
 
-  it('posts only the explicit conversion record and announces a customer mutation', () => {
+  it('posts the minimal conversion contract and announces a customer mutation', () => {
     const mutation = vi.fn();
     service.mutations$.subscribe(mutation);
     service
       .convert('lead-1', {
         row_version: 4,
-        purchased_service: 'Website Design',
-        reference: 'ORDER-1042',
-        reason: 'Signed agreement',
-        duplicate_resolution: 'link_existing',
-        existing_customer_id: 'customer-1',
-        pending_acquisition_task_disposition: 'cancel',
-        pending_task_reason: 'Acquisition completed',
       })
       .subscribe();
 
     const request = http.expectOne(`${API_CONFIG.baseUrl}/leads/lead-1/convert`);
     expect(request.request.method).toBe('POST');
-    expect(request.request.body.existing_customer_id).toBe('customer-1');
+    expect(request.request.body).toEqual({ row_version: 4 });
     expect(request.request.url).not.toMatch(/mail|message|send/);
     request.flush({ success: true, message: 'Lead converted to customer', data: {} });
     expect(mutation).toHaveBeenCalledOnce();
+  });
+
+  it('creates and updates customers through the finalized customer endpoints', () => {
+    const mutation = vi.fn();
+    service.mutations$.subscribe(mutation);
+    const fields = {
+      first_name: 'Jane',
+      last_name: 'Doe',
+      email: 'jane@example.com',
+      communication_consent_status: 'unknown' as const,
+    };
+
+    service.create(fields).subscribe();
+    const create = http.expectOne(`${API_CONFIG.baseUrl}/customers`);
+    expect(create.request.method).toBe('POST');
+    expect(create.request.body).toEqual(fields);
+    create.flush({ success: true, message: 'Customer created', data: { id: 'customer-1' } });
+
+    service.update('customer-1', { company: 'Example Co', row_version: 3 }).subscribe();
+    const update = http.expectOne(`${API_CONFIG.baseUrl}/customers/customer-1`);
+    expect(update.request.method).toBe('PATCH');
+    expect(update.request.body).toEqual({ company: 'Example Co', row_version: 3 });
+    expect(update.request.url).not.toMatch(/convert|mail|message|send/);
+    update.flush({ success: true, message: 'Customer updated', data: { id: 'customer-1' } });
+
+    expect(mutation).toHaveBeenCalledTimes(2);
   });
 });

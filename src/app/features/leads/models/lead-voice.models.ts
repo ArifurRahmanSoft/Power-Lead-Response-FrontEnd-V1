@@ -7,6 +7,7 @@ export interface LeadVoiceDraft {
   last_name: string | null;
   email: string | null;
   phone: string | null;
+  whatsapp_number: string | null;
   country: string | null;
   designation: string | null;
   company: string | null;
@@ -37,7 +38,7 @@ export interface LeadVoiceFieldError {
 
 export interface LeadVoiceExtractResponse {
   transcript: string;
-  extracted_fields: LeadVoiceDraft;
+  extracted_fields: Partial<LeadVoiceDraft>;
   field_errors: LeadVoiceFieldError[];
   review_warnings: string[];
 }

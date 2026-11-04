@@ -21,6 +21,9 @@
       <p>{{ current.company || current.email }}</p>
     </div>
     <div class="header-actions">
+      @if (auth.hasPermission(permissions.customersUpdate)) {
+        <a class="secondary-button" [routerLink]="['/customers', current.id, 'edit']">Edit</a>
+      }
       @if (auth.hasPermission(permissions.mailSend)) {
         <app-send-email
           contextType="customer"
@@ -55,6 +58,21 @@
           <div>
             <dt>Created</dt>
             <dd>{{ current.created_at | date: 'medium' }}</dd>
+          </div>
+          <div>
+            <dt>Source</dt>
+            <dd>
+              @if (isLeadDerived()) {
+                <span class="lead-badge source-lead">Lead</span>
+                @if (current.source_lead_label) {
+                  <span class="source-lead-label">{{ current.source_lead_label }}</span>
+                }
+              } @else {
+                <span [class.source-unknown]="sourceLabel() === 'Unknown'">{{
+                  sourceLabel()
+                }}</span>
+              }
+            </dd>
           </div>
         </dl>
       </section>
@@ -172,12 +190,14 @@
                 <article>
                   <div class="activity-heading">
                     <div>
-                      <strong>{{ conversion.purchased_service }}</strong>
+                      <strong>{{ conversion.purchased_service || 'Lead conversion' }}</strong>
                       <span class="activity-origin">Converted lead</span>
                     </div>
-                    <a class="text-button" [routerLink]="['/leads', conversion.lead_id]">
-                      View previous lead history
-                    </a>
+                    @if (auth.hasPermission(permissions.leadsView)) {
+                      <a class="text-button" [routerLink]="['/leads', conversion.lead_id]">
+                        View previous lead history
+                      </a>
+                    }
                   </div>
                   <dl class="activity-metadata">
                     <div>
@@ -200,7 +220,9 @@
                       <dd>{{ label(conversion.source_consent_status) }}</dd>
                     </div>
                   </dl>
-                  <p class="activity-copy"><b>Conversion reason:</b> {{ conversion.reason }}</p>
+                  @if (conversion.reason) {
+                    <p class="activity-copy"><b>Conversion reason:</b> {{ conversion.reason }}</p>
+                  }
                   <p class="activity-copy">
                     <b>Task reason:</b> {{ conversion.pending_task_reason }}
                   </p>

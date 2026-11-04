@@ -118,7 +118,7 @@
     </div>
   </aside>
 
-  <main class="workspace-content" [attr.inert]="mobileMenuOpen() ? '' : null">
+  <main #workspaceContent class="workspace-content" [attr.inert]="mobileMenuOpen() ? '' : null">
     <router-outlet />
   </main>
 </div>

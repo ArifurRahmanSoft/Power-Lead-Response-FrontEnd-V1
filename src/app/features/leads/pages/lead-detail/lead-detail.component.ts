@@ -34,7 +34,6 @@ import { normalizeLeadUrl } from '../../validators/lead-url.validator';
 import { TaskManagerComponent } from '../../../tasks/components/task-manager/task-manager.component';
 import {
   Customer,
-  CustomerDuplicateResolution,
   LeadConversion,
   LeadConversionResult,
 } from '../../../customers/models/customer.models';
@@ -115,11 +114,15 @@ export class LeadDetailComponent {
   });
   protected readonly loading = signal(true);
   protected readonly savingStatus = signal(false);
+  protected readonly contactModalOpen = signal(false);
   protected readonly savingPriority = signal(false);
   protected readonly archiving = signal(false);
   protected readonly errorMessage = signal('');
   protected readonly notice = signal(
     this.route.snapshot.queryParamMap.get('saved') ? 'Lead saved successfully.' : '',
+  );
+  protected readonly returnUrl = this.safeLeadReturnUrl(
+    this.route.snapshot.queryParamMap.get('returnUrl'),
   );
   protected readonly permissionDenied = signal(false);
   protected readonly archiveOpen = signal(false);
@@ -127,6 +130,13 @@ export class LeadDetailComponent {
   protected readonly followUpRequest = signal(0);
   protected readonly taskRefreshRequest = signal(0);
   protected readonly statusControl = new FormControl<LeadStatus | ''>('', { nonNullable: true });
+  protected readonly engagementModalOpen = signal(false);
+  protected readonly engagementSaving = signal(false);
+  protected readonly engagementError = signal('');
+  protected readonly engagementReason = new FormControl('', {
+    nonNullable: true,
+    validators: [Validators.required, Validators.maxLength(1000)],
+  });
   protected readonly priorityControl = new FormControl<LeadPriority>('normal', {
     nonNullable: true,
     validators: [Validators.required],
@@ -136,12 +146,43 @@ export class LeadDetailComponent {
   protected readonly nextStatuses = computed(() => {
     const current = this.lead();
     return current
-      ? LEAD_STATUS_TRANSITIONS[current.status].filter((status) => status !== 'converted')
+      ? LEAD_STATUS_TRANSITIONS[current.status].filter(
+          (status) => status !== 'converted' && status !== 'engaged' && status !== 'contacted',
+        )
       : [];
   });
-  protected readonly canConvert = computed(
-    () =>
-      this.lead()?.status === 'engaged' && this.auth.hasPermission(PERMISSIONS.customersConvert),
+  protected readonly canMarkContacted = computed(() => {
+    const current = this.lead();
+    return (
+      Boolean(current && LEAD_STATUS_TRANSITIONS[current.status].includes('contacted')) &&
+      this.auth.hasPermission(PERMISSIONS.leadsUpdate) &&
+      this.auth.hasPermission(PERMISSIONS.leadsStatus)
+    );
+  });
+  protected readonly contactedBlockingMessage = computed(() => {
+    const current = this.lead();
+    if (!current || !LEAD_STATUS_TRANSITIONS[current.status].includes('contacted')) return '';
+    const missing: string[] = [];
+    if (!this.auth.hasPermission(PERMISSIONS.leadsUpdate)) missing.push(PERMISSIONS.leadsUpdate);
+    if (!this.auth.hasPermission(PERMISSIONS.leadsStatus)) missing.push(PERMISSIONS.leadsStatus);
+    return missing.length
+      ? `The backend authorization snapshot is missing ${missing.join(' and ')}.`
+      : '';
+  });
+  protected readonly capabilityContractMissing = computed(() => {
+    const current = this.lead();
+    return Boolean(
+      current &&
+      (typeof current.can_mark_engaged !== 'boolean' ||
+        typeof current.can_convert_to_customer !== 'boolean'),
+    );
+  });
+  protected readonly canConvert = computed(() => this.lead()?.can_convert_to_customer === true);
+  protected readonly conversionBlockingMessage = computed(() =>
+    this.lifecycleBlockingMessage(this.lead()?.conversion_blocking_reason, 'conversion'),
+  );
+  protected readonly engagementBlockingMessage = computed(() =>
+    this.lifecycleBlockingMessage(this.lead()?.engagement_blocking_reason, 'engagement'),
   );
   protected readonly customerLifecycle = signal<{
     customer: Customer;
@@ -152,40 +193,7 @@ export class LeadDetailComponent {
   protected readonly conversionModalOpen = signal(false);
   protected readonly conversionSaving = signal(false);
   protected readonly conversionError = signal('');
-  protected readonly conversionFieldErrors = signal<Record<string, string>>({});
-  protected readonly customerOptions = signal<Customer[]>([]);
-  protected readonly customerOptionsLoading = signal(false);
-  protected readonly conversionForm = new FormGroup({
-    purchasedService: new FormControl('', {
-      nonNullable: true,
-      validators: [Validators.required, Validators.maxLength(200)],
-    }),
-    reference: new FormControl('', {
-      nonNullable: true,
-      validators: [Validators.maxLength(255)],
-    }),
-    reason: new FormControl('', {
-      nonNullable: true,
-      validators: [Validators.required, Validators.maxLength(1000)],
-    }),
-    duplicateResolution: new FormControl<CustomerDuplicateResolution>('create_new', {
-      nonNullable: true,
-      validators: [Validators.required],
-    }),
-    existingCustomerId: new FormControl('', { nonNullable: true }),
-    pendingTaskDisposition: new FormControl<'cancel' | 'retain'>('cancel', {
-      nonNullable: true,
-      validators: [Validators.required],
-    }),
-    pendingTaskReason: new FormControl('', {
-      nonNullable: true,
-      validators: [Validators.required, Validators.maxLength(1000)],
-    }),
-    confirmed: new FormControl(false, {
-      nonNullable: true,
-      validators: [Validators.requiredTrue],
-    }),
-  });
+  protected readonly duplicateCustomerId = signal<string | null>(null);
 
   protected readonly activityTypes = LEAD_ACTIVITY_TYPES;
   protected readonly activityChannels = LEAD_ACTIVITY_CHANNELS;
@@ -369,7 +377,7 @@ export class LeadDetailComponent {
   });
 
   private readonly leadId = this.route.snapshot.paramMap.get('id') || '';
-
+  private conversionRequested = this.route.snapshot.queryParamMap.get('convert') === '1';
   constructor() {
     this.activityForm.controls.activityType.valueChanges
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -407,6 +415,10 @@ export class LeadDetailComponent {
           this.loadAssignmentHistory();
           if (data.status === 'converted') this.loadCustomerLifecycle(data);
           else this.customerLifecycle.set(null);
+          if (this.conversionRequested && this.canConvert()) {
+            this.conversionRequested = false;
+            this.openConversion();
+          }
         },
         error: (error: unknown) => {
           const details = leadErrorDetails(error, 'Unable to load this lead.');
@@ -462,60 +474,33 @@ export class LeadDetailComponent {
   protected openConversion(): void {
     const current = this.lead();
     if (!current || !this.canConvert()) return;
-    this.conversionForm.reset({
-      purchasedService: current.service_requested || '',
-      reference: '',
-      reason: '',
-      duplicateResolution: 'create_new',
-      existingCustomerId: '',
-      pendingTaskDisposition: 'cancel',
-      pendingTaskReason: 'Lead acquisition is complete after conversion',
-      confirmed: false,
-    });
     this.conversionError.set('');
-    this.conversionFieldErrors.set({});
+    this.duplicateCustomerId.set(null);
     this.conversionModalOpen.set(true);
-    if (this.auth.hasPermission(PERMISSIONS.customersView)) this.loadCustomerOptions();
   }
 
   protected closeConversion(): void {
     if (this.conversionSaving()) return;
     this.conversionModalOpen.set(false);
     this.conversionError.set('');
-    this.conversionFieldErrors.set({});
+    this.duplicateCustomerId.set(null);
   }
 
   protected saveConversion(): void {
     const current = this.lead();
     if (!current || this.conversionSaving()) return;
-    const value = this.conversionForm.getRawValue();
-    if (value.duplicateResolution === 'link_existing' && !value.existingCustomerId) {
-      this.conversionFieldErrors.set({
-        existing_customer_id: 'Select the existing customer to link.',
-      });
-      this.conversionForm.controls.existingCustomerId.markAsTouched();
-      return;
-    }
-    if (this.conversionForm.invalid) {
-      this.conversionForm.markAllAsTouched();
-      return;
-    }
-
+    const existingCustomerId = this.duplicateCustomerId();
     this.conversionSaving.set(true);
     this.conversionError.set('');
-    this.conversionFieldErrors.set({});
     this.customers
       .convert(current.id, {
         row_version: current.row_version,
-        purchased_service: value.purchasedService.trim(),
-        reference: value.reference.trim() || null,
-        reason: value.reason.trim(),
-        duplicate_resolution: value.duplicateResolution,
-        ...(value.duplicateResolution === 'link_existing'
-          ? { existing_customer_id: value.existingCustomerId }
+        ...(existingCustomerId
+          ? {
+              duplicate_resolution: 'link_existing' as const,
+              existing_customer_id: existingCustomerId,
+            }
           : {}),
-        pending_acquisition_task_disposition: value.pendingTaskDisposition,
-        pending_task_reason: value.pendingTaskReason.trim(),
       })
       .pipe(
         finalize(() => this.conversionSaving.set(false)),
@@ -524,35 +509,24 @@ export class LeadDetailComponent {
       .subscribe({
         next: ({ data, message }) => {
           this.conversionModalOpen.set(false);
+          this.duplicateCustomerId.set(null);
           this.conversionResult.set(data);
           this.customerLifecycle.set({ customer: data.customer, conversion: data.conversion });
           this.notice.set(`${message}. No automatic message was sent.`);
           this.taskRefreshRequest.update((request) => request + 1);
-          this.refreshLeadAfterConversion();
+          void this.router.navigateByUrl(this.returnUrl, {
+            state: {
+              leadConversion: {
+                message: `${message}. The lead list and selection were refreshed.`,
+                customerId: this.auth.hasPermission(PERMISSIONS.customersView)
+                  ? data.customer.id
+                  : null,
+              },
+            },
+          });
         },
         error: (error: unknown) => this.handleConversionError(error),
       });
-  }
-
-  protected conversionFieldError(field: string): string {
-    const backend = this.conversionFieldErrors()[field];
-    if (backend) return backend;
-    const control = {
-      purchased_service: this.conversionForm.controls.purchasedService,
-      reference: this.conversionForm.controls.reference,
-      reason: this.conversionForm.controls.reason,
-      existing_customer_id: this.conversionForm.controls.existingCustomerId,
-      pending_task_reason: this.conversionForm.controls.pendingTaskReason,
-      confirmed: this.conversionForm.controls.confirmed,
-    }[field];
-    if (!control || !(control.touched || control.dirty)) return '';
-    if (control.hasError('required') || control.hasError('requiredTrue')) {
-      return field === 'confirmed'
-        ? 'Confirm the conversion before continuing.'
-        : 'This field is required.';
-    }
-    if (control.hasError('maxlength')) return 'This value is too long.';
-    return '';
   }
 
   protected openAssignment(): void {
@@ -1062,7 +1036,15 @@ export class LeadDetailComponent {
   protected updateStatus(): void {
     const lead = this.lead();
     const status = this.statusControl.value;
-    if (!lead || !status || this.savingStatus()) return;
+    if (
+      !lead ||
+      !status ||
+      status === 'contacted' ||
+      status === 'engaged' ||
+      status === 'converted' ||
+      this.savingStatus()
+    )
+      return;
     this.savingStatus.set(true);
     this.errorMessage.set('');
     this.leads
@@ -1080,6 +1062,99 @@ export class LeadDetailComponent {
         error: (error: unknown) =>
           this.errorMessage.set(leadErrorDetails(error, 'Unable to update lead status.').message),
       });
+  }
+
+  protected openContacted(): void {
+    if (!this.canMarkContacted() || this.savingStatus()) return;
+    this.errorMessage.set('');
+    this.contactModalOpen.set(true);
+  }
+
+  protected closeContacted(): void {
+    if (this.savingStatus()) return;
+    this.contactModalOpen.set(false);
+  }
+
+  protected markContacted(): void {
+    const current = this.lead();
+    if (!current || !this.canMarkContacted() || this.savingStatus()) return;
+    this.savingStatus.set(true);
+    this.errorMessage.set('');
+    this.leads
+      .update(current.id, { row_version: current.row_version, status: 'contacted' })
+      .pipe(
+        finalize(() => this.savingStatus.set(false)),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe({
+        next: ({ data, message }) => {
+          this.lead.set(data);
+          this.statusControl.setValue('');
+          this.contactModalOpen.set(false);
+          this.notice.set(message || 'Lead marked contacted.');
+        },
+        error: (error: unknown) => {
+          const details = leadErrorDetails(error, 'Unable to mark this lead contacted.');
+          this.errorMessage.set(details.message);
+          if (details.stale) this.refreshContactedAfterConflict();
+        },
+      });
+  }
+
+  protected openEngagement(): void {
+    if (this.lead()?.can_mark_engaged !== true || this.engagementSaving()) return;
+    this.engagementReason.reset('');
+    this.engagementError.set('');
+    this.engagementModalOpen.set(true);
+  }
+
+  protected closeEngagement(): void {
+    if (this.engagementSaving()) return;
+    this.engagementModalOpen.set(false);
+    this.engagementError.set('');
+    this.engagementReason.reset('');
+  }
+
+  protected markEngaged(): void {
+    const current = this.lead();
+    if (!current || current.can_mark_engaged !== true || this.engagementSaving()) return;
+    if (this.engagementReason.invalid) {
+      this.engagementReason.markAsTouched();
+      return;
+    }
+
+    this.engagementSaving.set(true);
+    this.engagementError.set('');
+    this.leads
+      .engage(current.id, {
+        row_version: current.row_version,
+        reason: this.engagementReason.value.trim(),
+      })
+      .pipe(
+        finalize(() => this.engagementSaving.set(false)),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe({
+        next: ({ data, message }) => {
+          this.lead.set(data);
+          this.statusControl.setValue('');
+          this.engagementModalOpen.set(false);
+          this.engagementReason.reset('');
+          this.notice.set(message || 'Lead marked engaged.');
+        },
+        error: (error: unknown) => {
+          const details = leadErrorDetails(error, 'Unable to mark this lead engaged.');
+          this.engagementError.set(details.fieldErrors['reason'] || details.message);
+          if (details.stale) this.refreshEngagementAfterConflict();
+        },
+      });
+  }
+
+  protected engagementReasonError(): string {
+    if (!(this.engagementReason.touched || this.engagementReason.dirty)) return '';
+    if (this.engagementReason.hasError('required')) return 'A reason is required.';
+    if (this.engagementReason.hasError('maxlength')) return 'Reason cannot exceed 1000 characters.';
+    return '';
   }
 
   protected updatePriority(): void {
@@ -1182,28 +1257,6 @@ export class LeadDetailComponent {
       });
   }
 
-  private loadCustomerOptions(page = 1, accumulated: Customer[] = []): void {
-    if (page === 1) {
-      this.customerOptions.set([]);
-      this.customerOptionsLoading.set(true);
-    }
-    this.customers
-      .list(page, API_PAGE_SIZE)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: ({ data }) => {
-          const options = this.uniqueById([...accumulated, ...data.items]);
-          if (data.page * data.size < data.total) {
-            this.loadCustomerOptions(data.page + 1, options);
-          } else {
-            this.customerOptions.set(options);
-            this.customerOptionsLoading.set(false);
-          }
-        },
-        error: () => this.customerOptionsLoading.set(false),
-      });
-  }
-
   private loadCustomerLifecycle(lead: Lead): void {
     if (!this.auth.hasPermission(PERMISSIONS.customersView)) return;
     this.customerLifecycleLoading.set(true);
@@ -1264,43 +1317,82 @@ export class LeadDetailComponent {
   private handleConversionError(error: unknown): void {
     const details = leadErrorDetails(error, 'Unable to convert this lead.');
     this.conversionError.set(details.message);
-    this.conversionFieldErrors.set(details.fieldErrors);
 
-    if (error instanceof HttpErrorResponse) {
-      const detail = error.error?.detail;
-      const existingCustomerId =
-        detail && typeof detail === 'object' && !Array.isArray(detail)
-          ? detail.existing_customer_id
-          : null;
-      if (typeof existingCustomerId === 'string') {
-        this.conversionForm.patchValue({
-          duplicateResolution: 'link_existing',
-          existingCustomerId,
-          confirmed: false,
-        });
-        this.conversionError.set(
-          `${details.message}. Review the existing-customer link and confirm again.`,
-        );
-        if (
-          this.auth.hasPermission(PERMISSIONS.customersView) &&
-          !this.customerOptions().some((customer) => customer.id === existingCustomerId)
-        ) {
-          this.customers
-            .get(existingCustomerId)
-            .pipe(takeUntilDestroyed(this.destroyRef))
-            .subscribe({
-              next: ({ data }) => this.customerOptions.update((items) => [...items, data]),
-            });
-        }
-      }
+    if (error instanceof HttpErrorResponse && error.status === 0) {
+      this.conversionError.set(
+        `${details.message} The conversion outcome is uncertain. It was not repeated automatically; verify the lead or customer state before trying again.`,
+      );
+    }
+
+    if (details.existingCustomerId) {
+      this.duplicateCustomerId.set(details.existingCustomerId);
+      this.conversionError.set(
+        `${details.message}. Confirm whether to link this lead to the existing customer.`,
+      );
     }
     if (details.stale) {
+      this.duplicateCustomerId.set(null);
       this.refreshLeadAfterConversion();
       this.taskRefreshRequest.update((request) => request + 1);
       this.conversionError.set(
         'This lead changed in another session. The latest lead and task state has been refreshed.',
       );
     }
+  }
+
+  private safeLeadReturnUrl(value: string | null): string {
+    return value === '/leads' || value?.startsWith('/leads?') ? value : '/leads';
+  }
+
+  private lifecycleBlockingMessage(
+    reason: string | null | undefined,
+    action: 'conversion' | 'engagement',
+  ): string {
+    if (!reason) return '';
+    const messages: Readonly<Record<string, string>> = {
+      already_converted: 'This lead has already been converted to a customer.',
+      lead_archived: 'Archived leads cannot be set as customers.',
+      lead_disqualified: 'Disqualified leads cannot be set as customers.',
+      lead_must_be_engaged: 'The backend reports that this lead is not eligible for conversion.',
+      conversion_not_authorized:
+        'The backend has not authorized you to convert this lead. Conversion is limited to eligible users for this record.',
+      already_engaged: 'This lead is already engaged.',
+      lead_must_be_contacted:
+        'The lead must be contacted before the backend permits marking it as engaged.',
+      engagement_not_authorized: 'The backend has not authorized you to mark this lead as engaged.',
+    };
+    return messages[reason] || `The backend blocked ${action}: ${this.label(reason)}.`;
+  }
+
+  private refreshEngagementAfterConflict(): void {
+    this.leads
+      .get(this.leadId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: ({ data }) => {
+          this.lead.set(data);
+          this.priorityControl.setValue(data.priority);
+          this.engagementError.set(
+            'This lead changed in another session. Its latest lifecycle status and capabilities have been refreshed; review them before confirming again.',
+          );
+        },
+      });
+  }
+
+  private refreshContactedAfterConflict(): void {
+    this.leads
+      .get(this.leadId)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: ({ data }) => {
+          this.lead.set(data);
+          this.priorityControl.setValue(data.priority);
+          this.contactModalOpen.set(false);
+          this.errorMessage.set(
+            'This lead changed in another session. Its latest lifecycle status and capabilities have been refreshed.',
+          );
+        },
+      });
   }
 
   private loadOutboundMessageDetails(activities: readonly LeadActivity[]): void {

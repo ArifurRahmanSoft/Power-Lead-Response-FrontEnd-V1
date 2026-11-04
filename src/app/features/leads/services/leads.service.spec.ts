@@ -105,6 +105,24 @@ describe('LeadsService', () => {
     expect(mutation).toHaveBeenCalledTimes(3);
   });
 
+  it('marks a lead engaged with the explicit reason and row version contract', () => {
+    const mutation = vi.fn();
+    service.mutations$.subscribe(mutation);
+
+    service
+      .engage('lead-id', { row_version: 4, reason: 'Confirmed active buying interest' })
+      .subscribe();
+
+    const request = http.expectOne(`${API_CONFIG.baseUrl}/leads/lead-id/engage`);
+    expect(request.request.method).toBe('POST');
+    expect(request.request.body).toEqual({
+      row_version: 4,
+      reason: 'Confirmed active buying interest',
+    });
+    request.flush({ success: true, message: 'Lead marked engaged', data: {} });
+    expect(mutation).toHaveBeenCalledOnce();
+  });
+
   it('uses record-only activity endpoints for timeline, logging, and corrections', () => {
     service.listActivities('lead-id', 2, 10).subscribe();
     const timeline = http.expectOne(
@@ -216,6 +234,12 @@ describe('LeadsService', () => {
   it('uses the backend Excel preview, status, error, and idempotent commit endpoints', () => {
     const mutation = vi.fn();
     service.mutations$.subscribe(mutation);
+    service.downloadImportTemplate().subscribe();
+    const template = http.expectOne(`${API_CONFIG.baseUrl}/leads/import-template`);
+    expect(template.request.method).toBe('GET');
+    expect(template.request.responseType).toBe('blob');
+    template.flush(new Blob());
+
     const file = new File(['workbook'], 'leads.xlsx', {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     });

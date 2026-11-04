@@ -22,7 +22,10 @@ describe('lead country compatibility', () => {
     expect(countryName('Atlantis')).toBe('Atlantis');
   });
 
-  it('includes the optional service field in Excel mapping', () => {
+  it('matches the current backend template and mapping fields', () => {
     expect(IMPORT_CANONICAL_FIELDS).toContain('service_requested');
+    expect(IMPORT_CANONICAL_FIELDS).toContain('whatsapp_number');
+    expect(IMPORT_CANONICAL_FIELDS).toContain('priority');
+    expect(IMPORT_CANONICAL_FIELDS).not.toContain('consent_evidence' as never);
   });
 });

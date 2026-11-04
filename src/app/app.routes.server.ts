@@ -18,6 +18,10 @@ export const serverRoutes: ServerRoute[] = [
     renderMode: RenderMode.Client,
   },
   {
+    path: 'customers/:id/edit',
+    renderMode: RenderMode.Client,
+  },
+  {
     path: 'customers/:id',
     renderMode: RenderMode.Client,
   },

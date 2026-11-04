@@ -32,6 +32,7 @@ function editLead(assignedUserId: string | null = ORIGINAL_ASSIGNEE_ID): Lead {
     company: 'Acme',
     company_website: 'https://example.com',
     service_requested: 'SEO',
+    whatsapp_number: '+8801712345678',
     email_status: 'unknown',
     consent_status: 'unknown',
     source: 'manual',
@@ -44,6 +45,10 @@ function editLead(assignedUserId: string | null = ORIGINAL_ASSIGNEE_ID): Lead {
     updated_at: '2026-10-05T00:00:00Z',
     updated_by: 'user-id',
     row_version: 4,
+    can_convert_to_customer: false,
+    conversion_blocking_reason: 'lead_must_be_engaged',
+    can_mark_engaged: false,
+    engagement_blocking_reason: 'lead_must_be_contacted',
   };
 }
 
@@ -121,7 +126,7 @@ describe('LeadFormComponent backend contract', () => {
     expect(submitButton.disabled).toBe(false);
   });
 
-  it('builds a create payload with bare URLs, country names, optional blanks, and service requested', () => {
+  it('builds a create payload with WhatsApp kept separate and optional consent evidence omitted', () => {
     const fixture = TestBed.createComponent(LeadFormComponent);
     fixture.detectChanges();
     const component = fixture.componentInstance as unknown as {
@@ -140,6 +145,9 @@ describe('LeadFormComponent backend contract', () => {
       companyWebsite: 'google.com',
       linkedinUrl: 'https://linkedin.com/in/jane',
       serviceRequested: 'Website Design',
+      phone: '+8801812345678',
+      whatsappNumber: '+8801712345678',
+      consentStatus: 'granted',
       facebookUrl: '',
     });
 
@@ -153,7 +161,140 @@ describe('LeadFormComponent backend contract', () => {
       linkedin_url: 'https://linkedin.com/in/jane',
       facebook_url: null,
       service_requested: 'Website Design',
+      phone: '+8801812345678',
+      whatsapp_number: '+8801712345678',
+      consent_status: 'granted',
     });
+    expect(component.toDto()).not.toHaveProperty('consent_evidence');
+    expect(fixture.debugElement.query(By.css('[formControlName="consentEvidence"]'))).toBeNull();
+  });
+
+  it('keeps WhatsApp optional and never copies the phone value into it', () => {
+    const fixture = TestBed.createComponent(LeadFormComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as {
+      form: {
+        patchValue(value: Record<string, string>): void;
+        valid: boolean;
+        getRawValue(): Record<string, unknown>;
+      };
+      toDto(): LeadCreateRequest;
+    };
+
+    component.form.patchValue({
+      firstName: 'Jane',
+      lastName: 'Doe',
+      email: 'jane@example.com',
+      phone: '+8801812345678',
+      whatsappNumber: '',
+    });
+
+    expect(component.form.valid).toBe(true);
+    expect(component.form.getRawValue()['whatsappNumber']).toBe('');
+    expect(component.toDto().whatsapp_number).toBeNull();
+  });
+
+  it('loads and updates WhatsApp while preserving historical consent evidence by omission', () => {
+    const lead = {
+      ...editLead(),
+      whatsapp_number: '+8801712345678',
+      consent_status: 'granted' as const,
+      consent_evidence: 'Historical audit record',
+    };
+    const update = vi.fn().mockReturnValue(of({ success: true, data: lead }));
+    TestBed.overrideProvider(AuthService, {
+      useValue: {
+        hasPermission: (permission: PermissionKey) => permission === PERMISSIONS.leadsUpdate,
+      },
+    });
+    TestBed.overrideProvider(LeadsService, { useValue: { update } });
+    const fixture = TestBed.createComponent(LeadFormComponent);
+    fixture.componentRef.setInput('lead', lead);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as {
+      form: {
+        patchValue(value: Record<string, string>): void;
+        getRawValue(): Record<string, unknown>;
+      };
+      submit(): void;
+    };
+
+    expect(component.form.getRawValue()['whatsappNumber']).toBe('+8801712345678');
+    component.form.patchValue({ whatsappNumber: '+14155552671' });
+    component.submit();
+
+    expect(update.mock.calls[0][1]).toMatchObject({
+      whatsapp_number: '+14155552671',
+      consent_status: 'granted',
+      row_version: 4,
+    });
+    expect(update.mock.calls[0][1]).not.toHaveProperty('consent_evidence');
+  });
+
+  it('resets WhatsApp when an edit form returns to a new-lead form', () => {
+    const fixture = TestBed.createComponent(LeadFormComponent);
+    fixture.componentRef.setInput('lead', editLead());
+    fixture.detectChanges();
+    fixture.componentRef.setInput('lead', null);
+    fixture.detectChanges();
+    const formValue = (
+      fixture.componentInstance as unknown as {
+        form: { getRawValue(): Record<string, unknown> };
+      }
+    ).form.getRawValue();
+
+    expect(formValue['whatsappNumber']).toBe('');
+    expect(formValue['phone']).toBe('');
+    expect(formValue['consentStatus']).toBe('unknown');
+  });
+
+  it('shows an actionable backend WhatsApp field error', () => {
+    const lead = editLead();
+    const update = vi.fn().mockReturnValue(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status: 422,
+            error: {
+              detail: {
+                message: 'Invalid lead data',
+                errors: [
+                  {
+                    field: 'whatsapp_number',
+                    message: 'Enter a valid international number beginning with +.',
+                  },
+                ],
+              },
+            },
+          }),
+      ),
+    );
+    TestBed.overrideProvider(AuthService, {
+      useValue: {
+        hasPermission: (permission: PermissionKey) => permission === PERMISSIONS.leadsUpdate,
+      },
+    });
+    TestBed.overrideProvider(LeadsService, { useValue: { update } });
+    const fixture = TestBed.createComponent(LeadFormComponent);
+    fixture.componentRef.setInput('lead', lead);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as {
+      form: { patchValue(value: Record<string, string>): void };
+      submit(): void;
+    };
+    component.form.patchValue({
+      whatsappNumber: 'not-a-number',
+    });
+
+    component.submit();
+    fixture.detectChanges();
+
+    const input = fixture.nativeElement.querySelector(
+      '[formControlName="whatsappNumber"]',
+    ) as HTMLInputElement;
+    expect(input.parentElement?.textContent).toContain(
+      'Enter a valid international number beginning with +.',
+    );
   });
 
   it('shows older API country codes as names when editing', () => {
@@ -179,6 +320,10 @@ describe('LeadFormComponent backend contract', () => {
       updated_at: '2026-10-05T00:00:00Z',
       updated_by: 'user-id',
       row_version: 1,
+      can_convert_to_customer: false,
+      conversion_blocking_reason: 'lead_must_be_engaged',
+      can_mark_engaged: false,
+      engagement_blocking_reason: 'lead_must_be_contacted',
     } satisfies Lead;
 
     fixture.componentRef.setInput('lead', lead);
@@ -198,12 +343,14 @@ describe('LeadFormComponent backend contract', () => {
     const lead = editLead();
     const update = vi.fn().mockReturnValue(of({ success: true, data: lead }));
     const hasPermission = (permission: PermissionKey) =>
-      ([
-        PERMISSIONS.leadsView,
-        PERMISSIONS.leadsUpdate,
-        PERMISSIONS.leadsAssign,
-        PERMISSIONS.settingsUsersView,
-      ] as PermissionKey[]).includes(permission);
+      (
+        [
+          PERMISSIONS.leadsView,
+          PERMISSIONS.leadsUpdate,
+          PERMISSIONS.leadsAssign,
+          PERMISSIONS.settingsUsersView,
+        ] as PermissionKey[]
+      ).includes(permission);
     TestBed.overrideProvider(AuthService, { useValue: { hasPermission } });
     TestBed.overrideProvider(SettingsService, {
       useValue: {
@@ -235,23 +382,27 @@ describe('LeadFormComponent backend contract', () => {
     TestBed.overrideProvider(AuthService, {
       useValue: {
         hasPermission: (permission: PermissionKey) =>
-          ([
-            PERMISSIONS.leadsUpdate,
-            PERMISSIONS.leadsAssign,
-            PERMISSIONS.settingsUsersView,
-          ] as PermissionKey[]).includes(permission),
+          (
+            [
+              PERMISSIONS.leadsUpdate,
+              PERMISSIONS.leadsAssign,
+              PERMISSIONS.settingsUsersView,
+            ] as PermissionKey[]
+          ).includes(permission),
       },
     });
     TestBed.overrideProvider(SettingsService, {
       useValue: {
-        listUsers: vi.fn().mockReturnValue(
-          of(
-            userPage([
-              settingsUser(ORIGINAL_ASSIGNEE_ID, 'Original'),
-              settingsUser(NEW_ASSIGNEE_ID, 'Replacement'),
-            ]),
+        listUsers: vi
+          .fn()
+          .mockReturnValue(
+            of(
+              userPage([
+                settingsUser(ORIGINAL_ASSIGNEE_ID, 'Original'),
+                settingsUser(NEW_ASSIGNEE_ID, 'Replacement'),
+              ]),
+            ),
           ),
-        ),
       },
     });
     TestBed.overrideProvider(LeadsService, { useValue: { update } });
@@ -265,7 +416,9 @@ describe('LeadFormComponent backend contract', () => {
 
     component.form.patchValue({ assignedUserId: NEW_ASSIGNEE_ID });
     fixture.detectChanges();
-    expect(fixture.debugElement.query(By.css('[formControlName="assignmentReason"]'))).not.toBeNull();
+    expect(
+      fixture.debugElement.query(By.css('[formControlName="assignmentReason"]')),
+    ).not.toBeNull();
     component.submit();
     fixture.detectChanges();
     expect(update).not.toHaveBeenCalled();
@@ -293,11 +446,13 @@ describe('LeadFormComponent backend contract', () => {
     TestBed.overrideProvider(AuthService, {
       useValue: {
         hasPermission: (permission: PermissionKey) =>
-          ([
-            PERMISSIONS.leadsUpdate,
-            PERMISSIONS.leadsAssign,
-            PERMISSIONS.settingsUsersView,
-          ] as PermissionKey[]).includes(permission),
+          (
+            [
+              PERMISSIONS.leadsUpdate,
+              PERMISSIONS.leadsAssign,
+              PERMISSIONS.settingsUsersView,
+            ] as PermissionKey[]
+          ).includes(permission),
       },
     });
     TestBed.overrideProvider(SettingsService, {
@@ -393,11 +548,13 @@ describe('LeadFormComponent backend contract', () => {
     TestBed.overrideProvider(AuthService, {
       useValue: {
         hasPermission: (permission: PermissionKey) =>
-          ([
-            PERMISSIONS.leadsUpdate,
-            PERMISSIONS.leadsAssign,
-            PERMISSIONS.settingsUsersView,
-          ] as PermissionKey[]).includes(permission),
+          (
+            [
+              PERMISSIONS.leadsUpdate,
+              PERMISSIONS.leadsAssign,
+              PERMISSIONS.settingsUsersView,
+            ] as PermissionKey[]
+          ).includes(permission),
       },
     });
     TestBed.overrideProvider(SettingsService, {
@@ -491,5 +648,87 @@ describe('LeadFormComponent backend contract', () => {
     expect(value['phone']).toBe('01712345678');
     expect(component.form.controls['lastName'].dirty).toBe(true);
     expect(component.form.controls['phone'].dirty).toBe(true);
+  });
+
+  it('applies a one-word first name without clearing an existing last name', () => {
+    const fixture = TestBed.createComponent(LeadFormComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as {
+      form: {
+        patchValue(value: Record<string, string>): void;
+        getRawValue(): Record<string, unknown>;
+      };
+      applyVoiceDraft(draft: LeadVoiceFormValues): void;
+    };
+    component.form.patchValue({ firstName: '', lastName: 'Existing Family Name' });
+
+    component.applyVoiceDraft({ first_name: 'Prince' });
+
+    expect(component.form.getRawValue()['firstName']).toBe('Prince');
+    expect(component.form.getRawValue()['lastName']).toBe('Existing Family Name');
+  });
+
+  it('applies backend multiword first and last names without splitting them', () => {
+    const fixture = TestBed.createComponent(LeadFormComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as {
+      form: { getRawValue(): Record<string, unknown> };
+      applyVoiceDraft(draft: LeadVoiceFormValues): void;
+    };
+
+    component.applyVoiceDraft({
+      first_name: 'Abu Sayeed Md',
+      last_name: 'Rahman Parvez',
+    });
+
+    expect(component.form.getRawValue()['firstName']).toBe('Abu Sayeed Md');
+    expect(component.form.getRawValue()['lastName']).toBe('Rahman Parvez');
+  });
+
+  it('maps voice WhatsApp independently and does not infer it from phone', () => {
+    const fixture = TestBed.createComponent(LeadFormComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as {
+      form: { getRawValue(): Record<string, unknown> };
+      applyVoiceDraft(draft: LeadVoiceFormValues): void;
+    };
+
+    component.applyVoiceDraft({ phone: '+8801811111111' });
+    expect(component.form.getRawValue()['phone']).toBe('+8801811111111');
+    expect(component.form.getRawValue()['whatsappNumber']).toBe('');
+
+    component.applyVoiceDraft({ whatsapp_number: '+880 1712 345 678' });
+    expect(component.form.getRawValue()['whatsappNumber']).toBe('+880 1712 345 678');
+  });
+
+  it('requires confirmation before disabling contact synchronization for voice WhatsApp', () => {
+    const fixture = TestBed.createComponent(LeadFormComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as {
+      form: {
+        patchValue(value: Record<string, string>): void;
+        getRawValue(): Record<string, unknown>;
+      };
+      sameAsContact(): boolean;
+      toggleSameAsContact(event: Event): void;
+      applyVoiceDraft(draft: LeadVoiceFormValues): void;
+      confirmVoiceOverwrite(): void;
+      voiceConflicts(): Array<{ field: string; synchronizationConflict?: boolean }>;
+    };
+    component.form.patchValue({ phone: '+8801811111111', whatsappNumber: '' });
+    component.toggleSameAsContact({ target: { checked: true } } as unknown as Event);
+
+    component.applyVoiceDraft({ whatsapp_number: '+8801711111111' });
+
+    expect(component.sameAsContact()).toBe(true);
+    expect(component.form.getRawValue()['whatsappNumber']).toBe('+8801811111111');
+    expect(component.voiceConflicts()).toEqual([
+      expect.objectContaining({ field: 'whatsapp_number', synchronizationConflict: true }),
+    ]);
+
+    component.confirmVoiceOverwrite();
+    expect(component.sameAsContact()).toBe(false);
+    expect(component.form.getRawValue()['phone']).toBe('+8801811111111');
+    expect(component.form.getRawValue()['whatsappNumber']).toBe('+8801711111111');
   });
 });

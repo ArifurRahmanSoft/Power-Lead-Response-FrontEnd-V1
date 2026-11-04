@@ -6,5 +6,5 @@ export interface PendingChangesAware {
 
 export const pendingChangesGuard: CanDeactivateFn<PendingChangesAware> = (component) => {
   if (!component.hasUnsavedChanges() || typeof window === 'undefined') return true;
-  return window.confirm('You have unsaved template changes. Leave without saving?');
+  return window.confirm('You have unsaved changes. Leave without saving?');
 };

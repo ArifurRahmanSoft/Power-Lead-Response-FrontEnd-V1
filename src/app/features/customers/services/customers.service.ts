@@ -5,8 +5,11 @@ import { Observable, Subject, tap } from 'rxjs';
 import { API_CONFIG } from '../../../core/config/api.config';
 import { DataResponse } from '../../leads/models/lead.models';
 import {
+  CustomerCreateRequest,
   CustomerDetail,
   CustomerPage,
+  CustomerResponse,
+  CustomerUpdateRequest,
   LeadConversionRequest,
   LeadConversionResponse,
 } from '../models/customer.models';
@@ -27,6 +30,18 @@ export class CustomersService {
 
   get(customerId: string): Observable<DataResponse<CustomerDetail>> {
     return this.http.get<DataResponse<CustomerDetail>>(`${this.baseUrl}/${customerId}`);
+  }
+
+  create(request: CustomerCreateRequest): Observable<CustomerResponse> {
+    return this.http
+      .post<CustomerResponse>(this.baseUrl, request)
+      .pipe(tap(() => this.mutations.next()));
+  }
+
+  update(customerId: string, request: CustomerUpdateRequest): Observable<CustomerResponse> {
+    return this.http
+      .patch<CustomerResponse>(`${this.baseUrl}/${customerId}`, request)
+      .pipe(tap(() => this.mutations.next()));
   }
 
   convert(leadId: string, request: LeadConversionRequest): Observable<LeadConversionResponse> {

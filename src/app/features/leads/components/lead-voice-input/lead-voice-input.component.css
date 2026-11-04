@@ -64,6 +64,25 @@
 .voice-body {
   padding: 1.25rem;
 }
+.voice-guidance {
+  display: grid;
+  gap: 0.2rem;
+  margin-bottom: 1rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid #dfe8dc;
+  border-radius: 0.65rem;
+  color: #52645a;
+  background: #f8faf6;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+.voice-guidance strong {
+  color: #304b3e;
+}
+.voice-guidance small {
+  color: #68786f;
+  font-size: 0.68rem;
+}
 .voice-ready,
 .voice-review-heading,
 .voice-review-actions,

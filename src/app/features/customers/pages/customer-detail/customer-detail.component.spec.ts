@@ -14,6 +14,8 @@ import { CustomerDetailComponent } from './customer-detail.component';
 interface ExposedCustomerDetail {
   customer: WritableSignal<CustomerDetail | null>;
   emailEligibilityIssues(): readonly string[];
+  isLeadDerived(): boolean;
+  sourceLabel(): string;
   statusLabel(status: string): string;
   failureReason(message: OutboundMessage): string;
 }
@@ -25,7 +27,7 @@ const currentUser: AuthUser = {
   name: 'Workspace Owner',
   email: 'owner@example.com',
 };
-const customer = {
+const customer: CustomerDetail = {
   id: customerId,
   first_name: 'Empty',
   last_name: 'History',
@@ -46,10 +48,12 @@ describe('CustomerDetailComponent email activity', () => {
   let fixture: ComponentFixture<CustomerDetailComponent>;
   let component: ExposedCustomerDetail;
   let http: HttpTestingController;
-  let permissions: Set<PermissionKey>;
+  let permissions: WritableSignal<ReadonlySet<PermissionKey>>;
 
   beforeEach(() => {
-    permissions = new Set([PERMISSIONS.customersView, PERMISSIONS.mailView]);
+    permissions = signal(
+      new Set([PERMISSIONS.customersView, PERMISSIONS.mailView]) as ReadonlySet<PermissionKey>,
+    );
     TestBed.configureTestingModule({
       imports: [CustomerDetailComponent],
       providers: [
@@ -66,7 +70,7 @@ describe('CustomerDetailComponent email activity', () => {
           provide: AuthService,
           useValue: {
             user: signal<AuthUser | null>(currentUser),
-            hasPermission: (permission: PermissionKey) => permissions.has(permission),
+            hasPermission: (permission: PermissionKey) => permissions().has(permission),
           },
         },
       ],
@@ -114,7 +118,7 @@ describe('CustomerDetailComponent email activity', () => {
     });
 
     expect(component.emailEligibilityIssues()).toEqual([]);
-    component.customer.set({ ...customer, communication_consent_status: '' });
+    component.customer.set({ ...customer, communication_consent_status: 'not_requested' });
     expect(component.emailEligibilityIssues()).toEqual([]);
 
     component.customer.set({ ...customer, communication_consent_status: 'denied' });
@@ -196,5 +200,53 @@ describe('CustomerDetailComponent email activity', () => {
     expect(fixture.nativeElement.textContent).toContain('Mail type');
     expect(fixture.nativeElement.textContent).toContain('Final Follow Up');
     expect(fixture.nativeElement.textContent).toContain('Recipient mailbox is unavailable');
+  });
+
+  it('labels only backend-confirmed lead origin and protects lead history links', () => {
+    flushCustomer();
+    expectHistoryRequest().flush({
+      success: true,
+      data: { items: [], page: 1, size: 100, total: 0 },
+    });
+
+    expect(component.isLeadDerived()).toBe(false);
+    expect(component.sourceLabel()).toBe('Unknown');
+    expect(fixture.nativeElement.textContent).toContain('Unknown');
+
+    component.customer.set({ ...customer, source_type: 'direct' });
+    fixture.detectChanges();
+    expect(component.sourceLabel()).toBe('Direct');
+    expect(fixture.nativeElement.textContent).toContain('Direct');
+
+    component.customer.set({
+      ...customer,
+      source_type: 'lead',
+      source_lead_id: 'lead-1',
+      source_lead_label: 'Jane Doe',
+    });
+    fixture.detectChanges();
+    expect(component.isLeadDerived()).toBe(true);
+    expect(component.sourceLabel()).toBe('Lead');
+    expect(fixture.nativeElement.textContent).toContain('Jane Doe');
+  });
+
+  it('shows edit only with customers.update permission', () => {
+    flushCustomer();
+    expectHistoryRequest().flush({
+      success: true,
+      data: { items: [], page: 1, size: 100, total: 0 },
+    });
+    fixture.detectChanges();
+    expect(
+      fixture.nativeElement.querySelector(`a[href="/customers/${customerId}/edit"]`),
+    ).toBeNull();
+
+    permissions.set(
+      new Set([PERMISSIONS.customersView, PERMISSIONS.mailView, PERMISSIONS.customersUpdate]),
+    );
+    fixture.detectChanges();
+    expect(
+      fixture.nativeElement.querySelector(`a[href="/customers/${customerId}/edit"]`),
+    ).not.toBeNull();
   });
 });

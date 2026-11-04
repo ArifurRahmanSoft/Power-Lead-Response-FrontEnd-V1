@@ -17,6 +17,14 @@
   </header>
 
   <div class="voice-body">
+    <div class="voice-guidance">
+      <strong>Example:</strong>
+      <span>“Name Arifur Rahman Parvez, email ..., mobile ..., WhatsApp ...”</span>
+      <small>
+        For a generic name, the first word becomes First Name and the remaining words become Last
+        Name. Saying “First Name” and “Last Name” explicitly takes priority.
+      </small>
+    </div>
     @if (!supported()) {
       <div class="voice-message error" role="alert">
         Voice recording is not supported here. Use a current browser on localhost or HTTPS, or

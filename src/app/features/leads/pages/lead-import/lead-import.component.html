@@ -23,8 +23,10 @@
   </p>
   <p>
     Country names are accepted (for example Bangladesh, United States, and Australia). URLs may omit
-    <code>https://</code>, and <code>service_requested</code> is optional, so older workbooks remain
-    supported.
+    <code>https://</code>. <strong>WhatsApp Number</strong> and <code>service_requested</code> are
+    optional, and older backend-compatible workbooks remain supported. Keep phone and WhatsApp cells
+    formatted as Text so leading zeroes and + are preserved. Use an international WhatsApp number
+    beginning with +, or supply Country when using a local format.
   </p>
 </div>
 @if (message()) {
@@ -73,7 +75,8 @@
         <h2>Optional header mapping</h2>
         <p>
           Add mappings only when your spreadsheet headers differ from the template. Matching headers
-          are mapped automatically, including the optional <code>service_requested</code> column.
+          are mapped automatically, including the optional <strong>WhatsApp Number</strong> and
+          <code>service_requested</code> columns.
         </p>
       </div>
     </div>
@@ -92,7 +95,7 @@
           >
             <option value="">Select field</option>
             @for (field of canonicalFields; track field) {
-              <option [value]="field">{{ field }}</option>
+              <option [value]="field">{{ fieldLabel(field) }}</option>
             }
           </select></label
         ><button type="button" aria-label="Remove mapping" (click)="removeMapping(index)">×</button>
@@ -165,7 +168,7 @@
           <div class="mapping-summary">
             @for (mapping of mappings; track mapping.key) {
               <span
-                ><code>{{ mapping.key }}</code> → <code>{{ mapping.value }}</code></span
+                ><code>{{ mapping.key }}</code> → <code>{{ fieldLabel(mapping.value) }}</code></span
               >
             }
           </div>

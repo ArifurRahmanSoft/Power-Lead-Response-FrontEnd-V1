@@ -61,6 +61,7 @@ export interface LeadFieldsDto {
   x_url?: string | null;
   github_url?: string | null;
   phone?: string | null;
+  whatsapp_number?: string | null;
   city?: string | null;
   state?: string | null;
   company_website?: string | null;
@@ -89,6 +90,10 @@ export interface Lead extends LeadFieldsDto {
   updated_at: string;
   updated_by: string;
   row_version: number;
+  can_convert_to_customer: boolean;
+  conversion_blocking_reason: string | null;
+  can_mark_engaged: boolean;
+  engagement_blocking_reason: string | null;
   email_summary?: LeadEmailSummary;
   sms_summary?: LeadSmsSummary;
 }
@@ -129,6 +134,11 @@ export type LeadUpdateFields = Partial<LeadFieldsDto> & {
 
 export interface LeadUpdateRequest extends LeadUpdateFields {
   row_version: number;
+}
+
+export interface LeadEngageRequest {
+  row_version: number;
+  reason: string;
 }
 
 export interface LeadFilters {
@@ -371,6 +381,7 @@ export const IMPORT_CANONICAL_FIELDS = [
   'x_url',
   'github_url',
   'phone',
+  'whatsapp_number',
   'city',
   'state',
   'company_website',
@@ -382,6 +393,6 @@ export const IMPORT_CANONICAL_FIELDS = [
   'revenue_period',
   'notes',
   'consent_status',
-  'consent_evidence',
   'consent_reference',
+  'priority',
 ] as const;

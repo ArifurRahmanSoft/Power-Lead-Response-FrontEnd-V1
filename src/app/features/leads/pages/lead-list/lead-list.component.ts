@@ -1,4 +1,4 @@
-import { DatePipe } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, DestroyRef, ViewChild, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -37,32 +37,50 @@ import { BulkSendEmailComponent } from '../../../mail/bulk-send-email/bulk-send-
 import { BulkSelectionMode } from '../../../mail/models/outbound-message.models';
 import { SendSmsComponent } from '../../../sms/send-sms/send-sms.component';
 import { SMS_DIRECT_SEND_MAX_RECIPIENTS, SmsRecipientInput } from '../../../sms/models/sms.models';
+import { CustomersService } from '../../../customers/services/customers.service';
 
 type SortColumn = 'name' | 'company' | 'email' | 'country' | 'status' | 'assignee';
 
+interface LeadConversionNavigationState {
+  message: string;
+  customerId: string | null;
+}
+
 @Component({
   selector: 'app-lead-list',
-  imports: [DatePipe, ReactiveFormsModule, RouterLink, BulkSendEmailComponent, SendSmsComponent],
+  imports: [ReactiveFormsModule, RouterLink, BulkSendEmailComponent, SendSmsComponent],
   templateUrl: './lead-list.component.html',
 })
 export class LeadListComponent {
   @ViewChild(BulkSendEmailComponent) private bulkComposer?: BulkSendEmailComponent;
   @ViewChild(SendSmsComponent) private smsComposer?: SendSmsComponent;
   private readonly leads = inject(LeadsService);
+  private readonly customers = inject(CustomersService);
   private readonly settings = inject(SettingsService);
   protected readonly auth = inject(AuthService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly conversionNavigationState = this.router.getCurrentNavigation()?.extras.state?.[
+    'leadConversion'
+  ] as LeadConversionNavigationState | undefined;
 
   protected readonly permissions = PERMISSIONS;
   protected readonly items = signal<Lead[]>([]);
   protected readonly loading = signal(false);
   protected readonly mutating = signal(false);
   protected readonly errorMessage = signal('');
-  protected readonly notice = signal('');
+  protected readonly notice = signal(this.conversionNavigationState?.message || '');
+  protected readonly convertedCustomerId = signal(
+    this.auth.hasPermission(PERMISSIONS.customersView)
+      ? this.conversionNavigationState?.customerId || null
+      : null,
+  );
   protected readonly permissionDenied = signal(false);
   protected readonly archiveCandidate = signal<Lead | null>(null);
+  protected readonly conversionCandidate = signal<Lead | null>(null);
+  protected readonly conversionError = signal('');
+  protected readonly duplicateCustomerId = signal<string | null>(null);
   protected readonly page = signal(1);
   protected readonly pageSize = 20;
   protected readonly total = signal(0);
@@ -191,9 +209,26 @@ export class LeadListComponent {
       .subscribe(({ data, error }) => {
         this.loading.set(false);
         if (data) {
+          const lastPage = Math.max(1, Math.ceil(data.total / this.pageSize));
+          if (data.page > lastPage) {
+            this.items.set([]);
+            this.total.set(data.total);
+            void this.router.navigate([], {
+              relativeTo: this.route,
+              queryParams: { page: lastPage },
+              queryParamsHandling: 'merge',
+            });
+            return;
+          }
           this.items.set(data.items);
           for (const lead of data.items) {
             if (this.selectedLeadIds().has(lead.id)) this.selectedLeadSnapshots.set(lead.id, lead);
+          }
+          const candidate = this.conversionCandidate();
+          if (candidate) {
+            const refreshedCandidate = data.items.find((lead) => lead.id === candidate.id);
+            if (refreshedCandidate) this.conversionCandidate.set(refreshedCandidate);
+            else this.conversionCandidate.set(null);
           }
           this.page.set(data.page);
           this.total.set(data.total);
@@ -319,6 +354,10 @@ export class LeadListComponent {
     });
   }
 
+  protected leadDetailQueryParams(): { returnUrl: string } {
+    return { returnUrl: this.router.url.startsWith('/leads') ? this.router.url : '/leads' };
+  }
+
   protected togglePageSelection(event: Event): void {
     const checked = (event.target as HTMLInputElement).checked;
     if (this.selectionMode() === 'all_matching' && !checked) {
@@ -368,6 +407,86 @@ export class LeadListComponent {
 
   protected isLeadSelected(leadId: string): boolean {
     return this.selectionMode() === 'all_matching' || this.selectedLeadIds().has(leadId);
+  }
+
+  protected canConvertLead(lead: Lead): boolean {
+    return lead.can_convert_to_customer === true;
+  }
+
+  protected selectedConversionLead(): Lead | null {
+    if (this.selectionMode() !== 'selected' || this.selectedLeadIds().size !== 1) return null;
+    const leadId = [...this.selectedLeadIds()][0];
+    const lead = this.selectedLeadSnapshots.get(leadId) || null;
+    return lead && this.canConvertLead(lead) ? lead : null;
+  }
+
+  protected openSelectedAsCustomer(): void {
+    const lead = this.selectedConversionLead();
+    if (lead) this.openSetAsCustomer(lead);
+  }
+
+  protected openSetAsCustomer(lead: Lead): void {
+    if (!this.canConvertLead(lead) || this.mutating()) return;
+    this.conversionCandidate.set(lead);
+    this.conversionError.set('');
+    this.duplicateCustomerId.set(null);
+  }
+
+  protected closeSetAsCustomer(): void {
+    if (this.mutating()) return;
+    this.conversionCandidate.set(null);
+    this.conversionError.set('');
+    this.duplicateCustomerId.set(null);
+  }
+
+  protected setAsCustomer(): void {
+    const lead = this.conversionCandidate();
+    if (!lead || this.mutating()) return;
+    const existingCustomerId = this.duplicateCustomerId();
+    this.mutating.set(true);
+    this.conversionError.set('');
+    this.customers
+      .convert(lead.id, {
+        row_version: lead.row_version,
+        ...(existingCustomerId
+          ? {
+              duplicate_resolution: 'link_existing' as const,
+              existing_customer_id: existingCustomerId,
+            }
+          : {}),
+      })
+      .pipe(
+        finalize(() => this.mutating.set(false)),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe({
+        next: ({ message, data }) => {
+          this.conversionCandidate.set(null);
+          this.duplicateCustomerId.set(null);
+          this.notice.set(`${message}. The Lead List has been refreshed.`);
+          this.convertedCustomerId.set(
+            this.auth.hasPermission(PERMISSIONS.customersView) ? data.customer.id : null,
+          );
+          this.clearSelection('Selection cleared after lead conversion.');
+          this.refreshList.next();
+        },
+        error: (error: unknown) => {
+          const details = leadErrorDetails(error, 'Unable to convert this lead.');
+          this.conversionError.set(details.message);
+          if (error instanceof HttpErrorResponse && error.status === 0) {
+            this.conversionError.set(
+              `${details.message} The conversion outcome is uncertain. It was not repeated automatically; verify the lead or customer state before trying again.`,
+            );
+          }
+          if (details.existingCustomerId) {
+            this.duplicateCustomerId.set(details.existingCustomerId);
+            this.conversionError.set(
+              `${details.message}. Confirm whether to link this lead to the existing customer.`,
+            );
+          }
+          if (details.stale) this.refreshList.next();
+        },
+      });
   }
 
   protected selectAllMatching(): void {
@@ -470,11 +589,6 @@ export class LeadListComponent {
 
   protected country(value: string | null | undefined): string {
     return countryName(value) || '—';
-  }
-
-  protected lastEmailAt(lead: Lead): string | null {
-    const summary = this.emailSummary(lead);
-    return summary.last_successful_email_at || summary.sent_at || null;
   }
 
   protected emailSummary(lead: Lead): LeadEmailSummary {

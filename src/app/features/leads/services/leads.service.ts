@@ -12,6 +12,7 @@ import {
   LeadActivityCreateRequest,
   LeadAssignmentHistory,
   LeadCreateRequest,
+  LeadEngageRequest,
   LeadBooking,
   LeadBookingCreateRequest,
   LeadBookingEvent,
@@ -161,6 +162,12 @@ export class LeadsService {
   update(leadId: string, request: LeadUpdateRequest): Observable<DataResponse<Lead>> {
     return this.http
       .patch<DataResponse<Lead>>(`${this.baseUrl}/${leadId}`, request)
+      .pipe(tap(() => this.mutations.next()));
+  }
+
+  engage(leadId: string, request: LeadEngageRequest): Observable<DataResponse<Lead>> {
+    return this.http
+      .post<DataResponse<Lead>>(`${this.baseUrl}/${leadId}/engage`, request)
       .pipe(tap(() => this.mutations.next()));
   }
 

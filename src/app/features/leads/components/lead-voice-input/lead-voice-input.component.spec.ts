@@ -11,6 +11,7 @@ const response: LeadVoiceExtractResponse = {
     last_name: 'Doe',
     email: null,
     phone: '01712345678',
+    whatsapp_number: '+8801812345678',
     country: null,
     designation: null,
     company: null,
@@ -72,6 +73,66 @@ describe('LeadVoiceInputComponent review', () => {
       last_name: 'Doe',
       email: 'jane@example.com',
       phone: '01712345678',
+      whatsapp_number: '+8801812345678',
     });
+  });
+
+  it('keeps backend name boundaries, missing values, and edited review values intact', () => {
+    const fixture = TestBed.createComponent(LeadVoiceInputComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as {
+      loadReview(value: LeadVoiceExtractResponse): void;
+      requestApply(): void;
+      reviewForm: {
+        controls: Record<string, { setValue(value: string): void; value: string }>;
+      };
+      applyDraft: { subscribe(callback: (value: LeadVoiceFormValues) => void): void };
+    };
+    let applied: LeadVoiceFormValues | undefined;
+    component.applyDraft.subscribe((value) => (applied = value));
+
+    component.loadReview({
+      transcript: 'First name Abu Sayeed, last name Rahman Parvez',
+      extracted_fields: {
+        first_name: 'Abu Sayeed',
+        last_name: 'Rahman Parvez',
+        whatsapp_number: '+880 1712 345 678',
+      },
+      field_errors: [],
+      review_warnings: [],
+    });
+
+    expect(component.reviewForm.controls['first_name'].value).toBe('Abu Sayeed');
+    expect(component.reviewForm.controls['last_name'].value).toBe('Rahman Parvez');
+    component.reviewForm.controls['first_name'].setValue('Abu Sayeed Md');
+    component.requestApply();
+
+    expect(applied).toEqual({
+      first_name: 'Abu Sayeed Md',
+      last_name: 'Rahman Parvez',
+      whatsapp_number: '+880 1712 345 678',
+    });
+  });
+
+  it('omits a null last name from a one-word backend name draft', () => {
+    const fixture = TestBed.createComponent(LeadVoiceInputComponent);
+    fixture.detectChanges();
+    const component = fixture.componentInstance as unknown as {
+      loadReview(value: LeadVoiceExtractResponse): void;
+      requestApply(): void;
+      applyDraft: { subscribe(callback: (value: LeadVoiceFormValues) => void): void };
+    };
+    let applied: LeadVoiceFormValues | undefined;
+    component.applyDraft.subscribe((value) => (applied = value));
+
+    component.loadReview({
+      transcript: 'Name Prince',
+      extracted_fields: { first_name: 'Prince', last_name: null },
+      field_errors: [],
+      review_warnings: [],
+    });
+    component.requestApply();
+
+    expect(applied).toEqual({ first_name: 'Prince' });
   });
 });

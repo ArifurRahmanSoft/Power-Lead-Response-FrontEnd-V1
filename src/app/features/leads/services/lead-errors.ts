@@ -3,7 +3,13 @@ import { HttpErrorResponse } from '@angular/common/http';
 interface ApiError {
   detail?:
     | string
-    | { message?: string; existing_lead?: { id: string; tracking_id: string } }
+    | {
+        message?: string;
+        field?: string;
+        existing_lead?: { id: string; tracking_id: string };
+        existing_customer_id?: string;
+        errors?: ApiValidationError[];
+      }
     | ApiValidationError[];
   message?: string;
   errors?: ApiValidationError[] | Record<string, string | string[]>;
@@ -20,6 +26,7 @@ export interface LeadErrorDetails {
   message: string;
   fieldErrors: Record<string, string>;
   duplicate?: { id: string; tracking_id: string };
+  existingCustomerId?: string;
   forbidden: boolean;
   stale: boolean;
 }
@@ -40,13 +47,19 @@ export function leadErrorDetails(error: unknown, fallback: string): LeadErrorDet
     if (typeof detail === 'string') result.message = detail;
     if (detail && !Array.isArray(detail) && typeof detail === 'object') {
       result.message = detail.message || fallback;
+      if (detail.field && detail.message) result.fieldErrors[detail.field] = detail.message;
       result.duplicate = detail.existing_lead;
+      if (typeof detail.existing_customer_id === 'string') {
+        result.existingCustomerId = detail.existing_customer_id;
+      }
     }
     const validation = Array.isArray(detail)
       ? detail
-      : Array.isArray(body.errors)
-        ? body.errors
-        : [];
+      : detail && typeof detail === 'object' && Array.isArray(detail.errors)
+        ? detail.errors
+        : Array.isArray(body.errors)
+          ? body.errors
+          : [];
     for (const item of validation) {
       const field =
         item.field ||

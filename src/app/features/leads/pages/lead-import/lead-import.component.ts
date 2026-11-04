@@ -240,6 +240,7 @@ export class LeadImportComponent {
   }
 
   protected fieldLabel(field: string): string {
+    if (field === 'whatsapp_number') return 'WhatsApp Number';
     const label = field.replaceAll('_', ' ').trim();
     return label ? label.charAt(0).toUpperCase() + label.slice(1) : 'Row';
   }

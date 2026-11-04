@@ -1,0 +1,43 @@
+<header class="lead-page-header">
+  <div>
+    <a
+      class="back-link"
+      [routerLink]="editing && customerId ? ['/customers', customerId] : ['/customers']"
+    >
+      ← Back to {{ editing ? 'customer' : 'customers' }}
+    </a>
+    <p class="eyebrow">Customer management</p>
+    <h1>{{ editing ? 'Edit customer' : 'Add customer' }}</h1>
+    <p>
+      {{
+        editing
+          ? 'Update customer contact, company, social, and internal handling information.'
+          : 'Create a direct customer record without creating a lead or sending a message.'
+      }}
+    </p>
+  </div>
+  @if (customer(); as current) {
+    <div class="read-only-meta">
+      <span>Source</span>
+      <strong>{{ sourceLabel(current) }}</strong>
+      <small>Version {{ current.row_version }}</small>
+    </div>
+  }
+</header>
+
+@if (loading()) {
+  <div class="lead-state" role="status">Loading customer…</div>
+} @else if (permissionDenied()) {
+  <div class="lead-state error">
+    <strong>Permission denied</strong>
+    <p>Your role cannot edit this customer.</p>
+  </div>
+} @else if (errorMessage()) {
+  <div class="lead-state error" role="alert">
+    <strong>We couldn’t load this customer.</strong>
+    <p>{{ errorMessage() }}</p>
+    <button class="secondary-button" type="button" (click)="loadCustomer()">Try again</button>
+  </div>
+} @else if (!editing || customer()) {
+  <app-customer-form [customer]="customer()" (saved)="finish($event)" (cancelled)="cancel()" />
+}

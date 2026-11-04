@@ -56,6 +56,16 @@ export class CustomerDetailComponent {
     }
     return issues;
   });
+  protected readonly isLeadDerived = computed(() => {
+    const current = this.customer();
+    return current?.source_type === 'lead';
+  });
+  protected readonly sourceLabel = computed(() => {
+    const source = this.customer()?.source_type;
+    if (source === 'direct') return 'Direct';
+    if (source === 'lead') return 'Lead';
+    return 'Unknown';
+  });
   private readonly customerId = this.route.snapshot.paramMap.get('id') || '';
 
   constructor() {

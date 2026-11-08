@@ -92,10 +92,42 @@ describe('MetaWhatsAppService', () => {
     expect(link.request.body).toEqual({ lead_id: 'lead-1' });
   });
 
-  it('uses the backend connection contract without adding client configuration', () => {
-    service.getConnectReadiness().subscribe();
-    expect(http.expectOne(`${baseUrl}/connect/readiness`).request.method).toBe('GET');
+  it('preserves the readiness success/data envelope without double-unwrapping', () => {
+    const readiness = {
+      success: true,
+      message: 'Meta WhatsApp onboarding readiness retrieved',
+      data: {
+        settings: [
+          { name: 'META_WHATSAPP_APP_ID', present: true, format_valid: true },
+          {
+            name: 'META_WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID',
+            present: true,
+            format_valid: true,
+          },
+          { name: 'META_WHATSAPP_OAUTH_REDIRECT_URI', present: true, format_valid: true },
+          { name: 'META_APP_SECRET', present: true, format_valid: true },
+          { name: 'SMTP_CREDENTIAL_ENCRYPTION_KEY', present: true, format_valid: true },
+          { name: 'META_GRAPH_API_VERSION', present: true, format_valid: true },
+        ],
+        missing_settings: [],
+        invalid_settings: [],
+        oauth_configuration_ready: true,
+        onboarding_mode: 'facebook_js_sdk' as const,
+        coexistence_requested: true,
+        hosted_signup_supports_coexistence_customization: false,
+        callback_contract: 'authenticated_code_handoff' as const,
+      },
+    };
+    let actual: unknown;
+    service.getConnectReadiness().subscribe((response) => (actual = response));
+    const request = http.expectOne(`${baseUrl}/connect/readiness`);
+    expect(request.request.method).toBe('GET');
+    request.flush(readiness);
 
+    expect(actual).toEqual(readiness);
+  });
+
+  it('uses the backend connection mutation contract without adding client configuration', () => {
     service.initiateConnection().subscribe();
     const initiate = http.expectOne(`${baseUrl}/connect/initiate`);
     expect(initiate.request.method).toBe('POST');

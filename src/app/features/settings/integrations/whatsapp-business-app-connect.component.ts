@@ -19,6 +19,7 @@ import { AuthService } from '../../../core/services/auth.service';
 import {
   MetaWhatsAppConnectInitiation,
   MetaWhatsAppConnectOperationData,
+  MetaWhatsAppConnectReadiness,
   MetaWhatsAppEmbeddedSignupSession,
 } from '../../whatsapp/models/meta-whatsapp.models';
 import {
@@ -233,31 +234,41 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe({
-        next: ({ data }) => {
-          const explicitReady =
-            typeof data.configuration_ready === 'boolean'
-              ? data.configuration_ready
-              : typeof data.ready === 'boolean'
-                ? data.ready
-                : typeof data.configured === 'boolean'
-                  ? data.configured
-                  : null;
-          if (explicitReady === null) {
+        next: (response) => {
+          if (response.success !== true) {
             this.configurationReady.set(false);
             this.readinessIssues.set([
-              'Backend readiness data is missing a boolean data.configuration_ready, data.ready, or data.configured field.',
+              response.message?.trim() || 'Backend readiness response did not return success=true.',
             ]);
             return;
           }
-          this.configurationReady.set(explicitReady);
-          const issues = this.extractIssues(data.errors, data.blockers, data.issues);
-          this.readinessIssues.set(
-            explicitReady || issues.length
-              ? issues
-              : [
-                  'Backend reported that onboarding configuration is not ready but did not provide data.errors, data.blockers, or data.issues.',
-                ],
-          );
+          const contractErrors = this.readinessContractErrors(response.data);
+          if (contractErrors.length) {
+            this.configurationReady.set(false);
+            this.readinessIssues.set(contractErrors);
+            return;
+          }
+
+          const data = response.data as MetaWhatsAppConnectReadiness;
+          const blockingIssues = this.readinessBlockingIssues(data);
+          const inconsistent = data.oauth_configuration_ready && blockingIssues.length > 0;
+          this.configurationReady.set(data.oauth_configuration_ready && !inconsistent);
+          if (inconsistent) {
+            this.readinessIssues.set([
+              'Backend readiness response is inconsistent: data.oauth_configuration_ready is true while setting blockers are present.',
+              ...blockingIssues,
+            ]);
+          } else if (!data.oauth_configuration_ready) {
+            this.readinessIssues.set(
+              blockingIssues.length
+                ? blockingIssues
+                : [
+                    'Backend reported data.oauth_configuration_ready=false without any names in data.missing_settings or data.invalid_settings.',
+                  ],
+            );
+          } else {
+            this.readinessIssues.set([]);
+          }
         },
         error: (error: unknown) => {
           this.configurationReady.set(false);
@@ -613,17 +624,67 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
       : '';
   }
 
-  private extractIssues(...groups: Array<readonly unknown[] | undefined>): string[] {
-    const values = groups.flatMap((group) => (Array.isArray(group) ? group : []));
-    return values
-      .map((item) => {
-        if (typeof item === 'string') return item;
-        if (!this.isRecord(item)) return '';
-        const message = this.stringValue(item['message']) ?? this.stringValue(item['detail']);
-        const code = this.stringValue(item['code']);
-        return [code, message].filter(Boolean).join(': ');
-      })
-      .filter((item): item is string => Boolean(item));
+  private readinessContractErrors(value: unknown): string[] {
+    if (!this.isRecord(value)) return ['Malformed readiness response: data must be an object.'];
+    const errors: string[] = [];
+    if (typeof value['oauth_configuration_ready'] !== 'boolean')
+      errors.push(
+        'Malformed readiness response: data.oauth_configuration_ready must be a boolean.',
+      );
+    if (!this.isStringArray(value['missing_settings']))
+      errors.push('Malformed readiness response: data.missing_settings must be a string array.');
+    if (!this.isStringArray(value['invalid_settings']))
+      errors.push('Malformed readiness response: data.invalid_settings must be a string array.');
+    if (!Array.isArray(value['settings'])) {
+      errors.push('Malformed readiness response: data.settings must be an array.');
+    } else {
+      value['settings'].forEach((setting, index) => {
+        if (!this.isRecord(setting)) {
+          errors.push(`Malformed readiness response: data.settings[${index}] must be an object.`);
+          return;
+        }
+        if (!this.stringValue(setting['name']))
+          errors.push(
+            `Malformed readiness response: data.settings[${index}].name must be a non-empty string.`,
+          );
+        if (typeof setting['present'] !== 'boolean')
+          errors.push(
+            `Malformed readiness response: data.settings[${index}].present must be a boolean.`,
+          );
+        if (typeof setting['format_valid'] !== 'boolean')
+          errors.push(
+            `Malformed readiness response: data.settings[${index}].format_valid must be a boolean.`,
+          );
+      });
+    }
+    if (value['onboarding_mode'] !== 'facebook_js_sdk')
+      errors.push('Malformed readiness response: data.onboarding_mode must be "facebook_js_sdk".');
+    if (typeof value['coexistence_requested'] !== 'boolean')
+      errors.push('Malformed readiness response: data.coexistence_requested must be a boolean.');
+    if (typeof value['hosted_signup_supports_coexistence_customization'] !== 'boolean')
+      errors.push(
+        'Malformed readiness response: data.hosted_signup_supports_coexistence_customization must be a boolean.',
+      );
+    if (value['callback_contract'] !== 'authenticated_code_handoff')
+      errors.push(
+        'Malformed readiness response: data.callback_contract must be "authenticated_code_handoff".',
+      );
+    return errors;
+  }
+
+  private readinessBlockingIssues(data: MetaWhatsAppConnectReadiness): string[] {
+    const issues: string[] = [];
+    const missing = new Set(data.missing_settings);
+    const invalid = new Set(data.invalid_settings);
+    for (const name of missing) issues.push(`Missing required setting: ${name}.`);
+    for (const name of invalid) issues.push(`Invalid setting format: ${name}.`);
+    for (const setting of data.settings) {
+      if (!setting.present && !missing.has(setting.name))
+        issues.push(`Missing required setting: ${setting.name}.`);
+      else if (setting.present && !setting.format_valid && !invalid.has(setting.name))
+        issues.push(`Invalid setting format: ${setting.name}.`);
+    }
+    return issues;
   }
 
   private backendSenderDetails(data: MetaWhatsAppConnectOperationData): string {
@@ -653,5 +714,9 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
 
   private isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  private isStringArray(value: unknown): value is string[] {
+    return Array.isArray(value) && value.every((item) => typeof item === 'string' && item.trim());
   }
 }

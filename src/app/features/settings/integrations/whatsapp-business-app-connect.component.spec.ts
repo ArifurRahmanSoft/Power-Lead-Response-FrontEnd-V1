@@ -28,9 +28,7 @@ describe('WhatsAppBusinessAppConnectComponent', () => {
     }),
   };
   const meta = {
-    getConnectReadiness: vi.fn(() =>
-      of({ success: true, message: '', data: { configuration_ready: true } }),
-    ),
+    getConnectReadiness: vi.fn((): any => of(readinessResponse())),
     getChannel: vi.fn(() =>
       of({
         success: true,
@@ -61,9 +59,7 @@ describe('WhatsAppBusinessAppConnectComponent', () => {
     loginCallback = null;
     completeResult = new Subject();
     vi.clearAllMocks();
-    meta.getConnectReadiness.mockReturnValue(
-      of({ success: true, message: '', data: { configuration_ready: true } }),
-    );
+    meta.getConnectReadiness.mockReturnValue(of(readinessResponse()));
     meta.initiateConnection.mockReturnValue(of(initiation()));
     meta.completeConnection.mockImplementation(() => completeResult.asObservable());
     meta.getConnectionOperation.mockReturnValue(
@@ -94,29 +90,75 @@ describe('WhatsAppBusinessAppConnectComponent', () => {
 
   afterEach(() => fixture?.destroy());
 
-  it('gates the action by update permission and displays backend readiness errors', async () => {
-    fixture.destroy();
-    canUpdate = false;
-    meta.getConnectReadiness.mockReturnValue(
-      of({
-        success: true,
-        message: '',
-        data: {
-          configuration_ready: false,
-          blockers: [{ code: 'CONFIG_ID', message: 'Add a configuration ID.' }],
-        },
-      }),
+  it('uses the exact readiness envelope once and gates the action by update permission', async () => {
+    const readyRoot = fixture.nativeElement as HTMLElement;
+    expect(findButton('Connect WhatsApp Business App').disabled).toBe(false);
+    expect(readyRoot.textContent).toContain('Configuration ready');
+    expect(readyRoot.textContent).toContain(
+      'does not mean a WhatsApp account is connected or subscribed',
     );
-    fixture = TestBed.createComponent(WhatsAppBusinessAppConnectComponent);
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
+
+    canUpdate = false;
+    await recreateWithReadiness(of(readinessResponse()));
 
     const root = fixture.nativeElement as HTMLElement;
     const button = findButton('Connect WhatsApp Business App');
     expect(button.disabled).toBe(true);
-    expect(root.textContent).toContain('CONFIG_ID: Add a configuration ID.');
-    expect(root.textContent).not.toContain('not a statement that Meta has approved');
+    expect(root.textContent).toContain('settings.integrations.update');
+  });
+
+  it('blocks readiness=false and displays exact missing and invalid setting names', async () => {
+    const response = readinessResponse({
+      settings: readinessResponse().data.settings.map((setting) =>
+        setting.name === 'META_WHATSAPP_APP_ID'
+          ? { ...setting, present: false, format_valid: false }
+          : setting.name === 'META_WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID'
+            ? { ...setting, format_valid: false }
+            : setting,
+      ),
+      missing_settings: ['META_WHATSAPP_APP_ID'],
+      invalid_settings: ['META_WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID'],
+      oauth_configuration_ready: false,
+    });
+    await recreateWithReadiness(of(response));
+
+    const root = fixture.nativeElement as HTMLElement;
+    expect(findButton('Connect WhatsApp Business App').disabled).toBe(true);
+    expect(root.textContent).toContain('Missing required setting: META_WHATSAPP_APP_ID.');
+    expect(root.textContent).toContain(
+      'Invalid setting format: META_WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID.',
+    );
+  });
+
+  it('rejects a malformed or missing oauth_configuration_ready value', async () => {
+    const response = readinessResponse() as any;
+    delete response.data.oauth_configuration_ready;
+    await recreateWithReadiness(of(response));
+
+    const root = fixture.nativeElement as HTMLElement;
+    expect(findButton('Connect WhatsApp Business App').disabled).toBe(true);
+    expect(root.textContent).toContain('data.oauth_configuration_ready must be a boolean');
+  });
+
+  it.each([
+    [401, 'Authentication required'],
+    [403, 'Integration permission denied'],
+    [503, 'Readiness service unavailable'],
+  ])('blocks onboarding and renders HTTP %s readiness errors', async (status, detail) => {
+    await recreateWithReadiness(
+      throwError(
+        () =>
+          new HttpErrorResponse({
+            status,
+            statusText: 'Error',
+            error: { detail },
+          }),
+      ),
+    );
+
+    const root = fixture.nativeElement as HTMLElement;
+    expect(findButton('Connect WhatsApp Business App').disabled).toBe(true);
+    expect(root.textContent).toContain(detail);
   });
 
   it('submits once when the code arrives before the session event', async () => {
@@ -261,6 +303,15 @@ describe('WhatsAppBusinessAppConnectComponent', () => {
     fixture.detectChanges();
   }
 
+  async function recreateWithReadiness(source: any): Promise<void> {
+    fixture.destroy();
+    meta.getConnectReadiness.mockReturnValue(source);
+    fixture = TestBed.createComponent(WhatsAppBusinessAppConnectComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
   async function launchAndCompleteInputs(): Promise<void> {
     await launch();
     dispatchSession('https://www.facebook.com');
@@ -310,6 +361,31 @@ function initiation(expiresAt = new Date(Date.now() + 60_000).toISOString()) {
       response_type: 'code' as const,
       override_default_response_type: true as const,
       extras: { version: 'v4', setup: { server: 'unchanged' } },
+    },
+  };
+}
+
+function readinessResponse(overrides: Record<string, unknown> = {}) {
+  return {
+    success: true,
+    message: 'Meta WhatsApp onboarding readiness retrieved',
+    data: {
+      settings: [
+        'META_WHATSAPP_APP_ID',
+        'META_WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID',
+        'META_WHATSAPP_OAUTH_REDIRECT_URI',
+        'META_APP_SECRET',
+        'SMTP_CREDENTIAL_ENCRYPTION_KEY',
+        'META_GRAPH_API_VERSION',
+      ].map((name) => ({ name, present: true, format_valid: true })),
+      missing_settings: [],
+      invalid_settings: [],
+      oauth_configuration_ready: true,
+      onboarding_mode: 'facebook_js_sdk' as const,
+      coexistence_requested: true,
+      hosted_signup_supports_coexistence_customization: false,
+      callback_contract: 'authenticated_code_handoff' as const,
+      ...overrides,
     },
   };
 }

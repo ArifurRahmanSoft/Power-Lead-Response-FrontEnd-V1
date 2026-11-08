@@ -160,14 +160,21 @@ export interface MetaWhatsAppLinkRequest {
   customer_id?: string;
 }
 
+export interface MetaWhatsAppReadinessSetting {
+  name: string;
+  present: boolean;
+  format_valid: boolean;
+}
+
 export interface MetaWhatsAppConnectReadiness {
-  configuration_ready?: boolean;
-  ready?: boolean;
-  configured?: boolean;
-  errors?: readonly unknown[];
-  blockers?: readonly unknown[];
-  issues?: readonly unknown[];
-  [key: string]: unknown;
+  settings: readonly MetaWhatsAppReadinessSetting[];
+  missing_settings: readonly string[];
+  invalid_settings: readonly string[];
+  oauth_configuration_ready: boolean;
+  onboarding_mode: 'facebook_js_sdk';
+  coexistence_requested: boolean;
+  hosted_signup_supports_coexistence_customization: boolean;
+  callback_contract: 'authenticated_code_handoff';
 }
 
 export interface MetaWhatsAppConnectInitiation {

@@ -61,8 +61,42 @@
       <dd>{{ diagnostics().code_received ? 'Yes' : 'No' }}</dd>
       <dt>Trusted Meta message received</dt>
       <dd>{{ diagnostics().trusted_message_received ? 'Yes' : 'No' }}</dd>
+      <dt>Trusted message count</dt>
+      <dd>{{ diagnostics().trusted_message_count }}</dd>
       <dt>Message stage</dt>
       <dd>{{ diagnostics().message_stage }}</dd>
+      <dt>Payload kind</dt>
+      <dd>{{ diagnostics().payload_kind }}</dd>
+      <dt>JSON parsing successful</dt>
+      <dd>
+        {{
+          diagnostics().json_parsing_success === null
+            ? 'Not required'
+            : diagnostics().json_parsing_success
+              ? 'Yes'
+              : 'No'
+        }}
+      </dd>
+      <dt>WA_EMBEDDED_SIGNUP type</dt>
+      <dd>{{ diagnostics().type_is_wa_embedded_signup ? 'Yes' : 'No' }}</dd>
+      <dt>Supported event</dt>
+      <dd>
+        {{
+          diagnostics().event_supported === null
+            ? 'Unknown'
+            : diagnostics().event_supported
+              ? 'Yes'
+              : 'No'
+        }}
+      </dd>
+      <dt>Data object</dt>
+      <dd>{{ diagnostics().data_is_object ? 'Yes' : 'No' }}</dd>
+      <dt>WABA ID present</dt>
+      <dd>{{ diagnostics().waba_id_present ? 'Yes' : 'No' }}</dd>
+      <dt>Phone number ID present</dt>
+      <dd>{{ diagnostics().phone_number_id_present ? 'Yes' : 'No' }}</dd>
+      <dt>Rejection reason</dt>
+      <dd>{{ diagnostics().rejection_reason }}</dd>
       <dt>Signup session received</dt>
       <dd>{{ diagnostics().session_received ? 'Yes' : 'No' }}</dd>
       <dt>/connect/complete reached</dt>

@@ -64,6 +64,7 @@ interface OnboardingDiagnostics {
     | 'failed';
   code_received: boolean;
   trusted_message_received: boolean;
+  trusted_message_count: number;
   message_stage:
     | 'none'
     | 'trusted_unsupported_payload'
@@ -72,6 +73,23 @@ interface OnboardingDiagnostics {
     | 'provider_error'
     | 'completion_missing_fields'
     | 'completion_validated';
+  payload_kind: 'none' | 'string' | 'object' | 'other';
+  json_parsing_success: boolean | null;
+  type_is_wa_embedded_signup: boolean;
+  event_supported: boolean | null;
+  data_is_object: boolean;
+  waba_id_present: boolean;
+  phone_number_id_present: boolean;
+  rejection_reason:
+    | 'none'
+    | 'json_parse_failed'
+    | 'payload_not_object'
+    | 'unrelated_type'
+    | 'event_missing_or_invalid'
+    | 'unsupported_event'
+    | 'data_not_object'
+    | 'missing_required_fields'
+    | 'source_mismatch';
   session_received: boolean;
   connect_complete_reached: boolean;
   status_checks: number;
@@ -82,6 +100,11 @@ const ALLOWED_META_MESSAGE_ORIGINS = new Set([
   'https://www.facebook.com',
   'https://web.facebook.com',
   'https://business.facebook.com',
+]);
+const SUPPORTED_SIGNUP_EVENTS = new Set([
+  'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
+  'CANCEL',
+  'ERROR',
 ]);
 const MAX_RECOVERY_ATTEMPTS = 3;
 const RECOVERY_DELAY_MS = 750;
@@ -129,7 +152,16 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
     stage: 'idle',
     code_received: false,
     trusted_message_received: false,
+    trusted_message_count: 0,
     message_stage: 'none',
+    payload_kind: 'none',
+    json_parsing_success: null,
+    type_is_wa_embedded_signup: false,
+    event_supported: null,
+    data_is_object: false,
+    waba_id_present: false,
+    phone_number_id_present: false,
+    rejection_reason: 'none',
     session_received: false,
     connect_complete_reached: false,
     status_checks: 0,
@@ -216,7 +248,16 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
       stage: 'waiting_for_code_and_session',
       code_received: false,
       trusted_message_received: false,
+      trusted_message_count: 0,
       message_stage: 'none',
+      payload_kind: 'none',
+      json_parsing_success: null,
+      type_is_wa_embedded_signup: false,
+      event_supported: null,
+      data_is_object: false,
+      waba_id_present: false,
+      phone_number_id_present: false,
+      rejection_reason: 'none',
       session_received: false,
       connect_complete_reached: false,
       status_checks: 0,
@@ -383,10 +424,24 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
   };
 
   private handleTrustedWindowMessage(event: MessageEvent<unknown>): void {
-    this.patchDiagnostics({ trusted_message_received: true });
+    const trustedMessageCount = this.diagnostics().trusted_message_count + 1;
+    if (this.signupSession) {
+      this.patchDiagnostics({
+        trusted_message_received: true,
+        trusted_message_count: trustedMessageCount,
+      });
+      return;
+    }
+    this.patchDiagnostics({
+      trusted_message_received: true,
+      trusted_message_count: trustedMessageCount,
+    });
     const message = this.parseEmbeddedSignupMessage(event.data);
     if (!message) return;
-    if (this.sessionMessageSource && event.source !== this.sessionMessageSource) return;
+    if (this.sessionMessageSource && event.source !== this.sessionMessageSource) {
+      this.patchDiagnostics({ rejection_reason: 'source_mismatch' });
+      return;
+    }
 
     this.patchDiagnostics({ message_stage: 'recognized_signup_event' });
 
@@ -397,20 +452,9 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
     }
     if (message.event === 'ERROR') {
       this.patchDiagnostics({ message_stage: 'provider_error' });
-      const detail =
-        this.stringValue(message.data['error_message']) ??
-        this.stringValue(message.data['message']);
       this.failFlow(
-        detail ? `Facebook signup failed: ${detail}` : 'Facebook signup reported an error.',
+        'Facebook signup reported a provider error.',
         this.safeDiagnosticCode(message.data['error_code'] ?? 'session_error'),
-      );
-      return;
-    }
-    if (message.event !== 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING') {
-      this.patchDiagnostics({ message_stage: 'trusted_unsupported_payload' });
-      this.failFlow(
-        `Unsupported WhatsApp signup completion event: ${message.event}. Expected FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING for Coexistence onboarding.`,
-        'unsupported_session_event',
       );
       return;
     }
@@ -418,14 +462,12 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
     const wabaId = this.stringValue(message.data['waba_id']);
     const phoneNumberId = this.stringValue(message.data['phone_number_id']);
     if (!wabaId || !phoneNumberId) {
-      this.patchDiagnostics({ message_stage: 'completion_missing_fields' });
-      const missingFields = [
-        ...(wabaId ? [] : ['data.waba_id']),
-        ...(phoneNumberId ? [] : ['data.phone_number_id']),
-      ];
-      this.failFlow(
-        `WhatsApp signup completed, but the session payload is missing ${missingFields.join(' and ')} required by /connect/complete. The completion request was not submitted.`,
-        'session_missing_required_fields',
+      this.patchDiagnostics({
+        message_stage: 'completion_missing_fields',
+        rejection_reason: 'missing_required_fields',
+      });
+      this.flowWarning.set(
+        'A trusted WhatsApp completion event was missing required session fields. Waiting for another valid completion event.',
       );
       return;
     }
@@ -437,19 +479,12 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
       ...(businessId ? { business_id: businessId } : {}),
     };
 
-    if (this.signupSession) {
-      if (
-        this.signupSession.waba_id !== session.waba_id ||
-        this.signupSession.phone_number_id !== session.phone_number_id
-      ) {
-        this.failFlow('Conflicting WhatsApp signup session events were received. Start again.');
-      }
-      return;
-    }
     this.sessionMessageSource = event.source;
     this.signupSession = session;
+    this.flowWarning.set('');
     this.patchDiagnostics({
       message_stage: 'completion_validated',
+      rejection_reason: 'none',
       session_received: true,
       stage: this.authorizationCode ? 'submitting_completion' : 'waiting_for_code',
     });
@@ -457,31 +492,80 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
   }
 
   private parseEmbeddedSignupMessage(value: unknown): EmbeddedSignupMessage | null {
+    const payloadKind =
+      typeof value === 'string'
+        ? 'string'
+        : typeof value === 'object' && value !== null
+          ? 'object'
+          : 'other';
+    this.patchDiagnostics({
+      message_stage: 'trusted_unsupported_payload',
+      payload_kind: payloadKind,
+      json_parsing_success: null,
+      type_is_wa_embedded_signup: false,
+      event_supported: null,
+      data_is_object: false,
+      waba_id_present: false,
+      phone_number_id_present: false,
+      rejection_reason: 'none',
+    });
     let parsed = value;
     if (typeof parsed === 'string') {
       try {
         parsed = JSON.parse(parsed) as unknown;
+        this.patchDiagnostics({ json_parsing_success: true });
       } catch {
-        this.patchDiagnostics({ message_stage: 'trusted_unsupported_payload' });
+        this.patchDiagnostics({
+          json_parsing_success: false,
+          rejection_reason: 'json_parse_failed',
+        });
         return null;
       }
     }
-    if (!this.isRecord(parsed) || parsed['type'] !== 'WA_EMBEDDED_SIGNUP') {
-      this.patchDiagnostics({ message_stage: 'trusted_unsupported_payload' });
+    if (!this.isRecord(parsed)) {
+      this.patchDiagnostics({ rejection_reason: 'payload_not_object' });
       return null;
     }
-    if (typeof parsed['event'] !== 'string' || !this.isRecord(parsed['data'])) {
-      this.patchDiagnostics({ message_stage: 'trusted_unsupported_payload' });
-      this.failFlow(
-        'Malformed WA_EMBEDDED_SIGNUP message: string event and object data fields are required.',
-        'malformed_session_event',
-      );
+    const typeIsSignup = parsed['type'] === 'WA_EMBEDDED_SIGNUP';
+    this.patchDiagnostics({ type_is_wa_embedded_signup: typeIsSignup });
+    if (!typeIsSignup) {
+      this.patchDiagnostics({ rejection_reason: 'unrelated_type' });
+      return null;
+    }
+    const event = parsed['event'];
+    if (typeof event !== 'string') {
+      this.patchDiagnostics({
+        event_supported: false,
+        rejection_reason: 'event_missing_or_invalid',
+      });
+      return null;
+    }
+    const eventSupported = SUPPORTED_SIGNUP_EVENTS.has(event);
+    const rawData = parsed['data'];
+    const dataIsObject = this.isRecord(rawData);
+    const data: Record<string, unknown> | null = dataIsObject
+      ? (rawData as Record<string, unknown>)
+      : null;
+    const wabaIdPresent = Boolean(data && this.stringValue(data['waba_id']));
+    const phoneNumberIdPresent = Boolean(data && this.stringValue(data['phone_number_id']));
+    this.patchDiagnostics({
+      event_supported: eventSupported,
+      data_is_object: dataIsObject,
+      waba_id_present: wabaIdPresent,
+      phone_number_id_present: phoneNumberIdPresent,
+    });
+    if (!eventSupported) {
+      this.patchDiagnostics({ rejection_reason: 'unsupported_event' });
+      return null;
+    }
+    if (!data) {
+      this.patchDiagnostics({ rejection_reason: 'data_not_object' });
       return null;
     }
     return {
       type: 'WA_EMBEDDED_SIGNUP',
-      event: parsed['event'],
-      data: parsed['data'],
+      event,
+      data,
     };
   }
 
@@ -707,7 +791,16 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
       stage: 'idle',
       code_received: false,
       trusted_message_received: false,
+      trusted_message_count: 0,
       message_stage: 'none',
+      payload_kind: 'none',
+      json_parsing_success: null,
+      type_is_wa_embedded_signup: false,
+      event_supported: null,
+      data_is_object: false,
+      waba_id_present: false,
+      phone_number_id_present: false,
+      rejection_reason: 'none',
       session_received: false,
       connect_complete_reached: false,
       status_checks: 0,

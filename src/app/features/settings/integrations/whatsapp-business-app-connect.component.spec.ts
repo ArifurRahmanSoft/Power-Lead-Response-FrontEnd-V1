@@ -226,6 +226,15 @@ describe('WhatsAppBusinessAppConnectComponent', () => {
     loginCallback?.({ authResponse: { code: 'secret-code' } });
 
     expect(meta.completeConnection).toHaveBeenCalledTimes(1);
+    fixture.detectChanges();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.textContent).toContain('Payload kindstring');
+    expect(root.textContent).toContain('JSON parsing successful Yes');
+    expect(root.textContent).toContain('WA_EMBEDDED_SIGNUP typeYes');
+    expect(root.textContent).toContain('Supported event Yes');
+    expect(root.textContent).toContain('Data objectYes');
+    expect(root.textContent).toContain('WABA ID presentYes');
+    expect(root.textContent).toContain('Phone number ID presentYes');
   });
 
   it('accepts the reverse event order and ignores duplicates', async () => {
@@ -247,6 +256,8 @@ describe('WhatsAppBusinessAppConnectComponent', () => {
     expect(meta.completeConnection).toHaveBeenCalledTimes(1);
     const root = fixture.nativeElement as HTMLElement;
     expect(root.textContent).toContain('/connect/complete reachedYes');
+    expect(root.textContent).toContain('Payload kindobject');
+    expect(root.textContent).toContain('JSON parsing successful Not required');
     expect(root.textContent).not.toContain('secret-code');
     expect(root.textContent).not.toContain('one-time-state');
   });
@@ -265,30 +276,82 @@ describe('WhatsAppBusinessAppConnectComponent', () => {
     expect(meta.completeConnection).toHaveBeenCalledTimes(1);
   });
 
-  it('fails precisely instead of waiting on malformed or unsupported completion events', async () => {
+  it('ignores an unrelated trusted message and accepts a later valid completion', async () => {
     await launch();
     loginCallback?.({ authResponse: { code: 'secret-code' } });
     window.dispatchEvent(
       new MessageEvent('message', {
         origin: 'https://www.facebook.com',
+        source: window,
+        data: JSON.stringify({ type: 'UNRELATED_META_MESSAGE', data: {} }),
+      }),
+    );
+    fixture.detectChanges();
+    expect(meta.completeConnection).not.toHaveBeenCalled();
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('unrelated_type');
+
+    dispatchSession('https://www.facebook.com');
+    fixture.detectChanges();
+    expect(meta.completeConnection).toHaveBeenCalledTimes(1);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.textContent).toContain('Trusted message count2');
+    expect(root.textContent).toContain('Rejection reasonnone');
+  });
+
+  it('records malformed trusted payloads and continues waiting for a valid session', async () => {
+    await launch();
+    loginCallback?.({ authResponse: { code: 'secret-code' } });
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        origin: 'https://www.facebook.com',
+        source: window,
+        data: '{not-json',
+      }),
+    );
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('json_parse_failed');
+    expect(meta.completeConnection).not.toHaveBeenCalled();
+
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        origin: 'https://www.facebook.com',
+        source: window,
+        data: {
+          type: 'WA_EMBEDDED_SIGNUP',
+          event: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
+          data: 'not-an-object',
+        },
+      }),
+    );
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain('data_not_object');
+    expect(meta.completeConnection).not.toHaveBeenCalled();
+
+    dispatchSession('https://www.facebook.com');
+    expect(meta.completeConnection).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps waiting after a completion with missing fields or an unsupported event', async () => {
+    await launch();
+    loginCallback?.({ authResponse: { code: 'secret-code' } });
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        origin: 'https://www.facebook.com',
+        source: window,
         data: {
           type: 'WA_EMBEDDED_SIGNUP',
           event: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
           data: { waba_id: 'waba-1' },
         },
-        source: window,
       }),
     );
     fixture.detectChanges();
     expect(meta.completeConnection).not.toHaveBeenCalled();
-    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
-      'session payload is missing data.phone_number_id',
-    );
-    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
-      'session_missing_required_fields',
-    );
+    let root = fixture.nativeElement as HTMLElement;
+    expect(root.textContent).toContain('completion_missing_fields');
+    expect(root.textContent).toContain('missing_required_fields');
+    expect(root.textContent).toContain('Phone number ID presentNo');
 
-    await launch();
     window.dispatchEvent(
       new MessageEvent('message', {
         origin: 'https://www.facebook.com',
@@ -301,12 +364,13 @@ describe('WhatsAppBusinessAppConnectComponent', () => {
       }),
     );
     fixture.detectChanges();
-    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
-      'Expected FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
-    );
-    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
-      'unsupported_session_event',
-    );
+    expect(meta.completeConnection).not.toHaveBeenCalled();
+    root = fixture.nativeElement as HTMLElement;
+    expect(root.textContent).toContain('Supported event No');
+    expect(root.textContent).toContain('unsupported_event');
+
+    dispatchSession('https://www.facebook.com');
+    expect(meta.completeConnection).toHaveBeenCalledTimes(1);
   });
 
   it.each([

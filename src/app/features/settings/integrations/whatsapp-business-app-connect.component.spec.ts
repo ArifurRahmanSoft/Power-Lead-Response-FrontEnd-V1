@@ -184,6 +184,50 @@ describe('WhatsAppBusinessAppConnectComponent', () => {
     });
   });
 
+  it('passes the authoritative initiation login options and extras unchanged', async () => {
+    const initiated = initiation();
+    meta.initiateConnection.mockReturnValueOnce(of(initiated));
+
+    await launch();
+
+    const options = (facebook.login.mock.calls as unknown[][])[0][0] as Record<string, unknown>;
+    expect(options).toEqual({
+      config_id: 'configuration-from-backend',
+      response_type: 'code',
+      override_default_response_type: true,
+      extras: initiated.data.extras,
+    });
+    expect(options['extras']).toBe(initiated.data.extras);
+  });
+
+  it('registers the listener before FB.login and handles a synchronous session event', async () => {
+    facebook.login.mockImplementationOnce((_options: unknown, callback: typeof loginCallback) => {
+      dispatchSession('https://www.facebook.com');
+      callback?.({ authResponse: { code: 'secret-code' } });
+    });
+
+    await launch();
+
+    expect(meta.completeConnection).toHaveBeenCalledTimes(1);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.textContent).toContain('Trusted Meta message receivedYes');
+    expect(root.textContent).toContain('Message stagecompletion_validated');
+  });
+
+  it('parses documented string-encoded WA_EMBEDDED_SIGNUP data', async () => {
+    await launch();
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        origin: 'https://www.facebook.com',
+        source: window,
+        data: JSON.stringify(sessionEventData()),
+      }),
+    );
+    loginCallback?.({ authResponse: { code: 'secret-code' } });
+
+    expect(meta.completeConnection).toHaveBeenCalledTimes(1);
+  });
+
   it('accepts the reverse event order and ignores duplicates', async () => {
     await launch();
     dispatchSession('https://web.facebook.com');
@@ -212,6 +256,10 @@ describe('WhatsAppBusinessAppConnectComponent', () => {
     loginCallback?.({ authResponse: { code: 'secret-code' } });
     dispatchSession('https://www.facebook.com.evil.test');
     expect(meta.completeConnection).not.toHaveBeenCalled();
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+      'Trusted Meta message receivedNo',
+    );
 
     dispatchSession('https://www.facebook.com');
     expect(meta.completeConnection).toHaveBeenCalledTimes(1);
@@ -261,6 +309,31 @@ describe('WhatsAppBusinessAppConnectComponent', () => {
     );
   });
 
+  it.each([
+    ['CANCEL', 'cancellation', 'session_cancelled'],
+    ['ERROR', 'provider_error', '451'],
+  ])('diagnoses a trusted %s signup event', async (event, messageStage, errorCode) => {
+    await launch();
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        origin: 'https://www.facebook.com',
+        source: window,
+        data: JSON.stringify({
+          type: 'WA_EMBEDDED_SIGNUP',
+          event,
+          data: event === 'ERROR' ? { error_code: 451 } : { current_step: 'VERIFY' },
+        }),
+      }),
+    );
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    expect(meta.completeConnection).not.toHaveBeenCalled();
+    expect(root.textContent).toContain('Trusted Meta message receivedYes');
+    expect(root.textContent).toContain(`Message stage${messageStage}`);
+    expect(root.textContent).toContain(errorCode);
+  });
+
   it('times out with an exact missing-session stage after receiving only the code', async () => {
     vi.useFakeTimers();
     await launch();
@@ -271,9 +344,33 @@ describe('WhatsAppBusinessAppConnectComponent', () => {
 
     const root = fixture.nativeElement as HTMLElement;
     expect(meta.completeConnection).not.toHaveBeenCalled();
-    expect(root.textContent).toContain('session event was not received');
+    expect(root.textContent).toContain('no message from a trusted Meta origin was received');
+    expect(root.textContent).toContain('Trusted Meta message receivedNo');
     expect(root.textContent).toContain('/connect/complete reachedNo');
-    expect(root.textContent).toContain('session_timeout');
+    expect(root.textContent).toContain('no_trusted_message_timeout');
+  });
+
+  it('distinguishes a trusted but unsupported payload from no trusted message', async () => {
+    vi.useFakeTimers();
+    await launch();
+    loginCallback?.({ authResponse: { code: 'secret-code' } });
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        origin: 'https://www.facebook.com',
+        source: window,
+        data: JSON.stringify({ type: 'UNRELATED_META_MESSAGE', data: {} }),
+      }),
+    );
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    expect(meta.completeConnection).not.toHaveBeenCalled();
+    expect(root.textContent).toContain('trusted Meta message was received');
+    expect(root.textContent).toContain('Trusted Meta message receivedYes');
+    expect(root.textContent).toContain('Message stagetrusted_unsupported_payload');
+    expect(root.textContent).toContain('trusted_message_unsupported_timeout');
   });
 
   it('times out with an exact missing-code stage after receiving only the session', async () => {
@@ -436,19 +533,23 @@ describe('WhatsAppBusinessAppConnectComponent', () => {
       new MessageEvent('message', {
         origin,
         source: window,
-        data: {
-          type: 'WA_EMBEDDED_SIGNUP',
-          event: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
-          data: {
-            business_id: 'business-1',
-            waba_id: 'waba-1',
-            phone_number_id: 'phone-1',
-          },
-        },
+        data: sessionEventData(),
       }),
     );
   }
 });
+
+function sessionEventData() {
+  return {
+    type: 'WA_EMBEDDED_SIGNUP',
+    event: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
+    data: {
+      business_id: 'business-1',
+      waba_id: 'waba-1',
+      phone_number_id: 'phone-1',
+    },
+  };
+}
 
 function initiation(expiresAt = new Date(Date.now() + 60_000).toISOString()) {
   return {

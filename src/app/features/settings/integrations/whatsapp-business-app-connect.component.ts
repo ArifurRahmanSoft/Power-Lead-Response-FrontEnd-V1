@@ -3,6 +3,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import {
   Component,
   DestroyRef,
+  NgZone,
   OnDestroy,
   OnInit,
   PLATFORM_ID,
@@ -62,6 +63,15 @@ interface OnboardingDiagnostics {
     | 'completed'
     | 'failed';
   code_received: boolean;
+  trusted_message_received: boolean;
+  message_stage:
+    | 'none'
+    | 'trusted_unsupported_payload'
+    | 'recognized_signup_event'
+    | 'cancellation'
+    | 'provider_error'
+    | 'completion_missing_fields'
+    | 'completion_validated';
   session_received: boolean;
   connect_complete_reached: boolean;
   status_checks: number;
@@ -100,6 +110,7 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
   private readonly facebook = inject(FacebookSdkService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly document = inject(DOCUMENT);
+  private readonly ngZone = inject(NgZone);
   private readonly isBrowser = isPlatformBrowser(inject(PLATFORM_ID));
 
   protected readonly canUpdate = computed(() =>
@@ -117,6 +128,8 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
   protected readonly diagnostics = signal<OnboardingDiagnostics>({
     stage: 'idle',
     code_received: false,
+    trusted_message_received: false,
+    message_stage: 'none',
     session_received: false,
     connect_complete_reached: false,
     status_checks: 0,
@@ -202,6 +215,8 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
     this.patchDiagnostics({
       stage: 'waiting_for_code_and_session',
       code_received: false,
+      trusted_message_received: false,
+      message_stage: 'none',
       session_received: false,
       connect_complete_reached: false,
       status_checks: 0,
@@ -364,15 +379,24 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
 
   private readonly handleWindowMessage = (event: MessageEvent<unknown>) => {
     if (!this.listenerInstalled || !ALLOWED_META_MESSAGE_ORIGINS.has(event.origin)) return;
+    this.ngZone.run(() => this.handleTrustedWindowMessage(event));
+  };
+
+  private handleTrustedWindowMessage(event: MessageEvent<unknown>): void {
+    this.patchDiagnostics({ trusted_message_received: true });
     const message = this.parseEmbeddedSignupMessage(event.data);
     if (!message) return;
     if (this.sessionMessageSource && event.source !== this.sessionMessageSource) return;
 
+    this.patchDiagnostics({ message_stage: 'recognized_signup_event' });
+
     if (message.event === 'CANCEL') {
+      this.patchDiagnostics({ message_stage: 'cancellation' });
       this.failFlow('Facebook signup was cancelled before completion.', 'session_cancelled');
       return;
     }
     if (message.event === 'ERROR') {
+      this.patchDiagnostics({ message_stage: 'provider_error' });
       const detail =
         this.stringValue(message.data['error_message']) ??
         this.stringValue(message.data['message']);
@@ -383,6 +407,7 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
       return;
     }
     if (message.event !== 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING') {
+      this.patchDiagnostics({ message_stage: 'trusted_unsupported_payload' });
       this.failFlow(
         `Unsupported WhatsApp signup completion event: ${message.event}. Expected FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING for Coexistence onboarding.`,
         'unsupported_session_event',
@@ -393,6 +418,7 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
     const wabaId = this.stringValue(message.data['waba_id']);
     const phoneNumberId = this.stringValue(message.data['phone_number_id']);
     if (!wabaId || !phoneNumberId) {
+      this.patchDiagnostics({ message_stage: 'completion_missing_fields' });
       const missingFields = [
         ...(wabaId ? [] : ['data.waba_id']),
         ...(phoneNumberId ? [] : ['data.phone_number_id']),
@@ -423,11 +449,12 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
     this.sessionMessageSource = event.source;
     this.signupSession = session;
     this.patchDiagnostics({
+      message_stage: 'completion_validated',
       session_received: true,
       stage: this.authorizationCode ? 'submitting_completion' : 'waiting_for_code',
     });
     this.submitWhenReady();
-  };
+  }
 
   private parseEmbeddedSignupMessage(value: unknown): EmbeddedSignupMessage | null {
     let parsed = value;
@@ -435,11 +462,16 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
       try {
         parsed = JSON.parse(parsed) as unknown;
       } catch {
+        this.patchDiagnostics({ message_stage: 'trusted_unsupported_payload' });
         return null;
       }
     }
-    if (!this.isRecord(parsed) || parsed['type'] !== 'WA_EMBEDDED_SIGNUP') return null;
+    if (!this.isRecord(parsed) || parsed['type'] !== 'WA_EMBEDDED_SIGNUP') {
+      this.patchDiagnostics({ message_stage: 'trusted_unsupported_payload' });
+      return null;
+    }
     if (typeof parsed['event'] !== 'string' || !this.isRecord(parsed['data'])) {
+      this.patchDiagnostics({ message_stage: 'trusted_unsupported_payload' });
       this.failFlow(
         'Malformed WA_EMBEDDED_SIGNUP message: string event and object data fields are required.',
         'malformed_session_event',
@@ -674,6 +706,8 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
     this.diagnostics.set({
       stage: 'idle',
       code_received: false,
+      trusted_message_received: false,
+      message_stage: 'none',
       session_received: false,
       connect_complete_reached: false,
       status_checks: 0,
@@ -710,19 +744,35 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
       const codeReceived = Boolean(this.authorizationCode);
       const sessionReceived = Boolean(this.signupSession);
       if (codeReceived && !sessionReceived) {
-        this.failFlow(
-          'Facebook authorization returned a code, but the WhatsApp signup session event was not received. /connect/complete was not called.',
-          'session_timeout',
-        );
+        const diagnostics = this.diagnostics();
+        if (!diagnostics.trusted_message_received) {
+          this.failFlow(
+            'Facebook authorization returned a code, but no message from a trusted Meta origin was received. /connect/complete was not called.',
+            'no_trusted_message_timeout',
+          );
+        } else if (diagnostics.message_stage === 'trusted_unsupported_payload') {
+          this.failFlow(
+            'Facebook authorization returned a code and a trusted Meta message was received, but it was not a supported WA_EMBEDDED_SIGNUP session. /connect/complete was not called.',
+            'trusted_message_unsupported_timeout',
+          );
+        } else {
+          this.failFlow(
+            'Facebook authorization returned a code, but a validated WhatsApp signup session was not available. /connect/complete was not called.',
+            'session_timeout',
+          );
+        }
       } else if (!codeReceived && sessionReceived) {
         this.failFlow(
           'The WhatsApp signup session completed, but Facebook did not return an authorization code. /connect/complete was not called.',
           'authorization_code_timeout',
         );
       } else {
+        const trustedMessage = this.diagnostics().trusted_message_received;
         this.failFlow(
-          'Facebook signup did not return an authorization code or a WhatsApp session event in time. /connect/complete was not called.',
-          'handshake_timeout',
+          trustedMessage
+            ? 'Facebook signup did not return an authorization code or a validated WhatsApp session in time. /connect/complete was not called.'
+            : 'Facebook signup did not return an authorization code, and no message from a trusted Meta origin was received. /connect/complete was not called.',
+          trustedMessage ? 'handshake_timeout' : 'no_trusted_message_or_code_timeout',
         );
       }
     }, HANDSHAKE_TIMEOUT_MS);

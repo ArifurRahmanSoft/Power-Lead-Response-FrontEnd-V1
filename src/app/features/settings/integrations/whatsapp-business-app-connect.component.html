@@ -59,6 +59,10 @@
       <dd>{{ diagnostics().stage }}</dd>
       <dt>Authorization code received</dt>
       <dd>{{ diagnostics().code_received ? 'Yes' : 'No' }}</dd>
+      <dt>Trusted Meta message received</dt>
+      <dd>{{ diagnostics().trusted_message_received ? 'Yes' : 'No' }}</dd>
+      <dt>Message stage</dt>
+      <dd>{{ diagnostics().message_stage }}</dd>
       <dt>Signup session received</dt>
       <dd>{{ diagnostics().session_received ? 'Yes' : 'No' }}</dd>
       <dt>/connect/complete reached</dt>

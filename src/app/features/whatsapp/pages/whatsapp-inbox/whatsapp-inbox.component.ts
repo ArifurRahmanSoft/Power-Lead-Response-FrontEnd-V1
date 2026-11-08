@@ -15,6 +15,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import {
   Observable,
   catchError,
@@ -103,7 +104,12 @@ const TWILIO_CHANNEL: WhatsAppChannelOption = {
 
 @Component({
   selector: 'app-whatsapp-inbox',
-  imports: [ReactiveFormsModule, WhatsAppConversationListComponent, WhatsAppChatPanelComponent],
+  imports: [
+    ReactiveFormsModule,
+    RouterLink,
+    WhatsAppConversationListComponent,
+    WhatsAppChatPanelComponent,
+  ],
   templateUrl: './whatsapp-inbox.component.html',
   styleUrl: './whatsapp-inbox.component.css',
 })
@@ -223,6 +229,9 @@ export class WhatsAppInboxComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.initializeProviders();
+    this.meta.channelChanged$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.initializeProviders());
     this.linkSearch.valueChanges
       .pipe(debounceTime(300), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
       .subscribe(() => {

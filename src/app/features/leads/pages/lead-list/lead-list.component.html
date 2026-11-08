@@ -9,7 +9,12 @@
       <a class="secondary-button button-link" routerLink="/leads/import">Import Excel</a>
     }
     @if (auth.hasPermission(permissions.leadsCreate)) {
-      <a class="primary-button button-link" routerLink="/leads/new">Add lead</a>
+      <a
+        class="primary-button button-link"
+        routerLink="/leads/new"
+        [queryParams]="createLeadQueryParams()"
+        >Add lead</a
+      >
     }
   </div>
 </header>
@@ -197,10 +202,6 @@
       <p>Try changing the filters, or add a lead if you have permission.</p>
     </div>
   } @else {
-    <div class="table-note">
-      Column sorting applies to this loaded page. The current backend contract does not expose
-      server-side sorting.
-    </div>
     <div class="lead-table-wrap">
       <table>
         <thead>
@@ -215,24 +216,12 @@
                 (change)="togglePageSelection($event)"
               />
             </th>
-            <th [attr.aria-sort]="ariaSort('name')">
-              <button type="button" (click)="sortBy('name')">Full name</button>
-            </th>
-            <th [attr.aria-sort]="ariaSort('company')">
-              <button type="button" (click)="sortBy('company')">Company</button>
-            </th>
-            <th [attr.aria-sort]="ariaSort('email')">
-              <button type="button" (click)="sortBy('email')">Email</button>
-            </th>
-            <th [attr.aria-sort]="ariaSort('country')">
-              <button type="button" (click)="sortBy('country')">Country</button>
-            </th>
-            <th [attr.aria-sort]="ariaSort('status')">
-              <button type="button" (click)="sortBy('status')">Status</button>
-            </th>
-            <th [attr.aria-sort]="ariaSort('assignee')">
-              <button type="button" (click)="sortBy('assignee')">Assignee</button>
-            </th>
+            <th>Full name</th>
+            <th>Company</th>
+            <th>Email</th>
+            <th>Country</th>
+            <th>Status</th>
+            <th>Assignee</th>
             <th>Email Status</th>
             <th>Last Email Type</th>
             <th>SMS Status</th>
@@ -241,7 +230,7 @@
           </tr>
         </thead>
         <tbody>
-          @for (lead of sortedItems(); track lead.id) {
+          @for (lead of items(); track lead.id) {
             <tr>
               <td class="selection-column">
                 <input

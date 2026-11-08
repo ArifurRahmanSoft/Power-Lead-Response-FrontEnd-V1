@@ -1,3 +1,10 @@
+@if (auth.hasPermission(permissions.settingsIntegrationsView)) {
+  <div class="integration-entry">
+    <span>Need to connect an eligible WhatsApp Business app number?</span>
+    <a routerLink="/settings/integrations">Connect WhatsApp Business App</a>
+  </div>
+}
+
 <div class="inbox-shell" [class.mobile-chat-open]="mobileChatOpen()">
   <app-whatsapp-conversation-list
     class="conversation-pane"

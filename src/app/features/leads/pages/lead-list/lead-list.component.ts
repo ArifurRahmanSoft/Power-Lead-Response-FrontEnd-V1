@@ -39,8 +39,6 @@ import { SendSmsComponent } from '../../../sms/send-sms/send-sms.component';
 import { SMS_DIRECT_SEND_MAX_RECIPIENTS, SmsRecipientInput } from '../../../sms/models/sms.models';
 import { CustomersService } from '../../../customers/services/customers.service';
 
-type SortColumn = 'name' | 'company' | 'email' | 'country' | 'status' | 'assignee';
-
 interface LeadConversionNavigationState {
   message: string;
   customerId: string | null;
@@ -84,8 +82,6 @@ export class LeadListComponent {
   protected readonly page = signal(1);
   protected readonly pageSize = 20;
   protected readonly total = signal(0);
-  protected readonly sortColumn = signal<SortColumn>('name');
-  protected readonly sortDirection = signal<'asc' | 'desc'>('asc');
   protected readonly assignees = signal<SettingsUser[]>([]);
   protected readonly serviceOptions = signal<LeadServiceOption[]>([]);
   protected readonly serviceOptionsLoading = signal(false);
@@ -129,19 +125,6 @@ export class LeadListComponent {
   protected readonly pageCount = computed(() =>
     Math.max(1, Math.ceil(this.total() / this.pageSize)),
   );
-  protected readonly sortedItems = computed(() => {
-    const column = this.sortColumn();
-    const direction = this.sortDirection() === 'asc' ? 1 : -1;
-    const assigneeNames = new Map(this.assignees().map((user) => [user.id, user.display_name]));
-    const value = (lead: Lead): string => {
-      if (column === 'name') return `${lead.first_name} ${lead.last_name}`;
-      if (column === 'assignee')
-        return assigneeNames.get(lead.assigned_user_id || '') || lead.assigned_user_id || '';
-      if (column === 'country') return countryName(lead.country);
-      return String(lead[column] || '');
-    };
-    return [...this.items()].sort((a, b) => value(a).localeCompare(value(b)) * direction);
-  });
   protected readonly selectedCount = computed(() =>
     this.selectionMode() === 'all_matching' ? this.total() : this.selectedLeadIds().size,
   );
@@ -358,6 +341,10 @@ export class LeadListComponent {
     return { returnUrl: this.router.url.startsWith('/leads') ? this.router.url : '/leads' };
   }
 
+  protected createLeadQueryParams(): { returnUrl: string } {
+    return { returnUrl: this.router.url.startsWith('/leads') ? this.router.url : '/leads' };
+  }
+
   protected togglePageSelection(event: Event): void {
     const checked = (event.target as HTMLInputElement).checked;
     if (this.selectionMode() === 'all_matching' && !checked) {
@@ -566,20 +553,6 @@ export class LeadListComponent {
 
   protected refreshSmsStatus(): void {
     this.refreshList.next();
-  }
-
-  protected sortBy(column: SortColumn): void {
-    if (this.sortColumn() === column)
-      this.sortDirection.update((direction) => (direction === 'asc' ? 'desc' : 'asc'));
-    else {
-      this.sortColumn.set(column);
-      this.sortDirection.set('asc');
-    }
-  }
-
-  protected ariaSort(column: SortColumn): 'ascending' | 'descending' | 'none' {
-    if (this.sortColumn() !== column) return 'none';
-    return this.sortDirection() === 'asc' ? 'ascending' : 'descending';
   }
 
   protected assigneeName(id: string | null): string {

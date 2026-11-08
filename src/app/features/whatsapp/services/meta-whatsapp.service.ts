@@ -1,11 +1,15 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, Subject } from 'rxjs';
 
 import { API_CONFIG } from '../../../core/config/api.config';
 import {
   MetaApprovedTemplatePage,
   MetaChannelResponse,
+  MetaWhatsAppConnectCompleteRequest,
+  MetaWhatsAppConnectInitiationResponse,
+  MetaWhatsAppConnectOperationResponse,
+  MetaWhatsAppConnectReadinessResponse,
   MetaWhatsAppConversation,
   MetaWhatsAppConversationPage,
   MetaWhatsAppLinkRequest,
@@ -33,9 +37,48 @@ export function metaWhatsAppApiRoot(apiBaseUrl = API_CONFIG.baseUrl): string {
 export class MetaWhatsAppService {
   private readonly http = inject(HttpClient);
   private readonly baseUrl = metaWhatsAppApiRoot();
+  private readonly channelChangedSubject = new Subject<void>();
+  readonly channelChanged$ = this.channelChangedSubject.asObservable();
+
+  announceChannelChanged(): void {
+    this.channelChangedSubject.next();
+  }
 
   getChannel(): Observable<MetaChannelResponse> {
     return this.http.get<MetaChannelResponse>(`${this.baseUrl}/channel`);
+  }
+
+  getConnectReadiness(): Observable<MetaWhatsAppConnectReadinessResponse> {
+    return this.http.get<MetaWhatsAppConnectReadinessResponse>(`${this.baseUrl}/connect/readiness`);
+  }
+
+  initiateConnection(): Observable<MetaWhatsAppConnectInitiationResponse> {
+    return this.http.post<MetaWhatsAppConnectInitiationResponse>(
+      `${this.baseUrl}/connect/initiate`,
+      null,
+    );
+  }
+
+  completeConnection(
+    request: Readonly<MetaWhatsAppConnectCompleteRequest>,
+  ): Observable<MetaWhatsAppConnectOperationResponse> {
+    return this.http.post<MetaWhatsAppConnectOperationResponse>(
+      `${this.baseUrl}/connect/complete`,
+      request,
+    );
+  }
+
+  getConnectionOperation(operationId: string): Observable<MetaWhatsAppConnectOperationResponse> {
+    return this.http.get<MetaWhatsAppConnectOperationResponse>(
+      `${this.baseUrl}/connect/operations/${encodeURIComponent(operationId)}`,
+    );
+  }
+
+  activateConnection(operationId: string): Observable<MetaWhatsAppConnectOperationResponse> {
+    return this.http.post<MetaWhatsAppConnectOperationResponse>(
+      `${this.baseUrl}/connect/operations/${encodeURIComponent(operationId)}/activate`,
+      { confirm_replace_existing_sender: true },
+    );
   }
 
   listConversations(

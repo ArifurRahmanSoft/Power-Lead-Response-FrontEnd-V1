@@ -79,6 +79,9 @@ describe('workspace menu policy', () => {
         PERMISSIONS.settingsMenuPermissionsView,
       ]).map((item) => item.path),
     ).toEqual(['/settings/users', '/settings/menu-permissions']);
+    expect(
+      availableSettingsMenuItems([PERMISSIONS.settingsIntegrationsView]).map((item) => item.path),
+    ).toEqual(['/settings/integrations']);
   });
 
   it('uses backend permissions rather than a built-in role allowlist', () => {

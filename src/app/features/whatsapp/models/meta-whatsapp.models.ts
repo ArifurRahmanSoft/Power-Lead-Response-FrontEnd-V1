@@ -160,4 +160,55 @@ export interface MetaWhatsAppLinkRequest {
   customer_id?: string;
 }
 
+export interface MetaWhatsAppConnectReadiness {
+  configuration_ready?: boolean;
+  ready?: boolean;
+  configured?: boolean;
+  errors?: readonly unknown[];
+  blockers?: readonly unknown[];
+  issues?: readonly unknown[];
+  [key: string]: unknown;
+}
+
+export interface MetaWhatsAppConnectInitiation {
+  operation_id: string;
+  state: string;
+  expires_at: string;
+  launch_mode: 'facebook_js_sdk';
+  app_id: string;
+  configuration_id: string;
+  graph_api_version: string;
+  response_type: 'code';
+  override_default_response_type: true;
+  extras: Readonly<Record<string, unknown>>;
+}
+
+export interface MetaWhatsAppEmbeddedSignupSession {
+  event: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING';
+  business_id?: string;
+  waba_id: string;
+  phone_number_id: string;
+}
+
+export interface MetaWhatsAppConnectCompleteRequest {
+  operation_id: string;
+  state: string;
+  code: string;
+  session: MetaWhatsAppEmbeddedSignupSession;
+}
+
+export interface MetaWhatsAppConnectOperationData {
+  status?: string;
+  confirmation_required?: boolean;
+  current_sender?: unknown;
+  replacement_sender?: unknown;
+  new_sender?: unknown;
+  [key: string]: unknown;
+}
+
+export type MetaWhatsAppConnectReadinessResponse = ApiDataResponse<MetaWhatsAppConnectReadiness>;
+export type MetaWhatsAppConnectInitiationResponse = ApiDataResponse<MetaWhatsAppConnectInitiation>;
+export type MetaWhatsAppConnectOperationResponse =
+  ApiDataResponse<MetaWhatsAppConnectOperationData>;
+
 export type MetaChannelResponse = ApiDataResponse<MetaWhatsAppChannel>;

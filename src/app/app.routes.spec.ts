@@ -18,4 +18,15 @@ describe('customer routes', () => {
     expect(edit?.canActivate).toHaveLength(1);
     expect(edit?.canDeactivate).toHaveLength(1);
   });
+
+  it('guards integration settings with the backend view permission', () => {
+    const settings = customerRoutes.find((route) => route.path === 'settings');
+    const integrations = settings?.children?.find((route) => route.path === 'integrations');
+
+    expect(settings?.data?.['requiredPermissions']).toContain(PERMISSIONS.settingsIntegrationsView);
+    expect(integrations?.data?.['requiredPermissions']).toEqual([
+      PERMISSIONS.settingsIntegrationsView,
+    ]);
+    expect(integrations?.canActivate).toHaveLength(1);
+  });
 });

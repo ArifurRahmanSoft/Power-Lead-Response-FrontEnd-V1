@@ -1,0 +1,147 @@
+:host {
+  display: block;
+}
+
+.integration-page {
+  display: grid;
+  gap: 1rem;
+  max-width: 58rem;
+}
+
+.integration-heading,
+.action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.integration-heading p {
+  margin: 0 0 0.25rem;
+  color: #709166;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.integration-heading h2,
+.readiness-card h3,
+.action-card h3,
+.success-card h3 {
+  margin: 0;
+  color: #203329;
+}
+
+.integration-heading h2 {
+  font-family: Georgia, serif;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 400;
+}
+
+.integration-heading a,
+.primary-link {
+  color: #1e5748;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.intro,
+.readiness-card p,
+.action-card p,
+.success-card p,
+.permission-note {
+  margin: 0;
+  color: #68756d;
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+.readiness-card,
+.action-card,
+.success-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid #dce3d8;
+  border-radius: 0.8rem;
+  background: #fff;
+}
+
+.readiness-card > div,
+.action-card {
+  gap: 0.55rem;
+}
+
+.readiness-card > div {
+  display: grid;
+}
+
+.ready-state,
+.not-ready-state {
+  font-weight: 800;
+}
+
+.ready-state {
+  color: #216344 !important;
+}
+
+.not-ready-state {
+  color: #8e332e !important;
+}
+
+.issues {
+  margin: 0;
+  padding: 0.8rem 1rem 0.8rem 2rem;
+  border-radius: 0.6rem;
+  color: #7b3f36;
+  background: #fff7f3;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.flow-warning,
+.permission-note {
+  margin: 0;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid #ead9ad;
+  border-radius: 0.6rem;
+  color: #6e5720 !important;
+  background: #fffaf0;
+  font-size: 0.8rem;
+}
+
+.success-card {
+  border-color: #bcd8c2;
+  background: #f5fbf4;
+}
+
+.action-row {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.sender-details {
+  display: grid;
+  gap: 0.5rem;
+  color: #34483e;
+  font-size: 0.78rem;
+}
+
+.sender-details pre {
+  max-height: 12rem;
+  margin: 0;
+  padding: 0.75rem;
+  overflow: auto;
+  border-radius: 0.5rem;
+  background: #f5f7f3;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 620px) {
+  .integration-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

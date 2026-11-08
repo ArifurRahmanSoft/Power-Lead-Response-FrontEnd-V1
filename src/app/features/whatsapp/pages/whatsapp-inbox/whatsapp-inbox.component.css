@@ -248,3 +248,20 @@
     gap: 0;
   }
 }
+.integration-entry {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid #d8e4d4;
+  border-radius: 0.65rem;
+  color: #53655a;
+  background: #f7faf4;
+  font-size: 0.78rem;
+}
+
+.integration-entry a {
+  color: #1e5748;
+  font-weight: 800;
+}

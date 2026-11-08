@@ -1,0 +1,151 @@
+<section class="integration-page" aria-labelledby="whatsapp-connect-title">
+  <header class="integration-heading">
+    <div>
+      <p>Meta WhatsApp</p>
+      <h2 id="whatsapp-connect-title">Connect WhatsApp Business App</h2>
+    </div>
+    <a routerLink="/messages/whatsapp">Open WhatsApp inbox</a>
+  </header>
+
+  <p class="intro">
+    Connect an eligible existing WhatsApp Business app number through Meta's official Coexistence
+    onboarding. This does not delete the app account or replace existing message history.
+  </p>
+
+  @if (channelSender()) {
+    <p class="notice" role="status">Active Meta sender: {{ channelSender() }}</p>
+  }
+
+  <article class="readiness-card">
+    <div>
+      <h3>Onboarding configuration</h3>
+      @if (readinessLoading()) {
+        <p role="status">Checking backend configuration...</p>
+      } @else if (readinessError()) {
+        <p class="alert" role="alert">{{ readinessError() }}</p>
+        <button class="secondary-button" type="button" (click)="retryReadiness()">Retry</button>
+      } @else if (configurationReady()) {
+        <p class="ready-state">Configuration ready</p>
+        <p>
+          The backend is configured to start onboarding. This is not a statement that Meta has
+          approved the app, business, account, or phone number.
+        </p>
+      } @else {
+        <p class="not-ready-state">Configuration not ready</p>
+      }
+    </div>
+
+    @if (readinessIssues().length) {
+      <ul class="issues" aria-label="Configuration details">
+        @for (issue of readinessIssues(); track issue) {
+          <li>{{ issue }}</li>
+        }
+      </ul>
+    }
+  </article>
+
+  @if (flowError()) {
+    <p class="alert" role="alert">{{ flowError() }}</p>
+  }
+  @if (flowWarning()) {
+    <p class="flow-warning" role="status">{{ flowWarning() }}</p>
+  }
+
+  @if (phase() === 'success') {
+    <section class="success-card" role="status">
+      <h3>WhatsApp connection confirmed</h3>
+      <p>
+        Channel readiness has been refreshed. Existing conversations remain in their original
+        provider history and have not been relabeled.
+      </p>
+      <a class="primary-link" routerLink="/messages/whatsapp">Go to WhatsApp inbox</a>
+    </section>
+  } @else {
+    <section class="action-card">
+      <h3>Start official Coexistence onboarding</h3>
+      <p>
+        Meta will open a sign-in window only after you explicitly continue. Keep the WhatsApp
+        Business app and the phone that uses the eligible number available.
+      </p>
+
+      @if (!canUpdate()) {
+        <p class="permission-note">
+          You can view integration readiness, but settings.integrations.update is required to
+          connect or replace a sender.
+        </p>
+      }
+
+      <div class="action-row">
+        @if (phase() === 'idle') {
+          <button
+            class="primary-button"
+            type="button"
+            [disabled]="!canUpdate() || !configurationReady() || readinessLoading()"
+            (click)="prepareConnection()"
+          >
+            Connect WhatsApp Business App
+          </button>
+        } @else if (phase() === 'preparing') {
+          <button class="primary-button" type="button" disabled>Preparing secure signup...</button>
+        } @else if (phase() === 'prepared') {
+          <button class="primary-button" type="button" (click)="launchFacebookSignup()">
+            Continue with Facebook
+          </button>
+          <button class="secondary-button" type="button" (click)="cancelPreparedFlow()">
+            Cancel
+          </button>
+        } @else if (phase() === 'launching') {
+          <button class="primary-button" type="button" disabled>Waiting for Facebook...</button>
+          <button class="secondary-button" type="button" (click)="cancelPreparedFlow()">
+            Cancel
+          </button>
+        } @else if (phase() === 'submitting') {
+          <button class="primary-button" type="button" disabled>Confirming connection...</button>
+        } @else if (phase() === 'recovering') {
+          <button class="primary-button" type="button" disabled>
+            Checking connection result...
+          </button>
+        } @else if (phase() === 'activating') {
+          <button class="primary-button" type="button" disabled>Activating sender...</button>
+        }
+      </div>
+    </section>
+  }
+</section>
+
+@if (phase() === 'confirmation') {
+  <div class="modal-backdrop">
+    <section
+      class="modal sender-confirmation"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="sender-confirmation-title"
+    >
+      <h2 id="sender-confirmation-title">Confirm active sender change</h2>
+      <p>
+        Activating this connection will change the active WhatsApp sender for the workspace. Old
+        conversation history remains preserved and will not be relabeled as belonging to the new
+        sender.
+      </p>
+      @if (confirmationDetails()) {
+        <div class="sender-details">
+          <strong>Sender information returned by the backend</strong>
+          <pre>{{ confirmationDetails() }}</pre>
+        </div>
+      } @else {
+        <p class="flow-warning">
+          The backend requested confirmation but did not return current_sender, replacement_sender,
+          or new_sender details.
+        </p>
+      }
+      <div class="form-actions">
+        <button class="secondary-button" type="button" (click)="declineSenderReplacement()">
+          Keep existing sender
+        </button>
+        <button class="primary-button" type="button" (click)="confirmSenderReplacement()">
+          Confirm sender change
+        </button>
+      </div>
+    </section>
+  </div>
+}

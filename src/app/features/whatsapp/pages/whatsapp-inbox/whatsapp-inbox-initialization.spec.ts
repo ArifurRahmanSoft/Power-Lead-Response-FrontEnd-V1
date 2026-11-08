@@ -5,11 +5,13 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { API_CONFIG } from '../../../../core/config/api.config';
 import { PERMISSIONS } from '../../../../core/models/auth.models';
 import { AuthService } from '../../../../core/services/auth.service';
+import { MetaWhatsAppService } from '../../services/meta-whatsapp.service';
 import { WhatsAppInboxComponent } from './whatsapp-inbox.component';
 
 describe('WhatsAppInboxComponent provider initialization', () => {
   let fixture: ComponentFixture<WhatsAppInboxComponent>;
   let http: HttpTestingController;
+  let metaService: MetaWhatsAppService;
   const twilioConversationsUrl = `${API_CONFIG.baseUrl}/messages/whatsapp/conversations?page=1&size=20`;
   const metaBaseUrl = `${API_CONFIG.baseUrl}/messages/meta/whatsapp`;
   const auth = {
@@ -28,6 +30,7 @@ describe('WhatsAppInboxComponent provider initialization', () => {
       ],
     }).compileComponents();
     http = TestBed.inject(HttpTestingController);
+    metaService = TestBed.inject(MetaWhatsAppService);
     fixture = TestBed.createComponent(WhatsAppInboxComponent);
     fixture.detectChanges();
   });
@@ -131,6 +134,29 @@ describe('WhatsAppInboxComponent provider initialization', () => {
     expect(root.textContent).toContain('Meta WhatsApp:');
     expect(root.textContent).toContain('Twilio WhatsApp:');
     expect(http.match(`${metaBaseUrl}/conversations?page=1&size=20`)).toHaveLength(0);
+  });
+
+  it('rediscovers channels and refreshes the selected inbox after a confirmed connection', () => {
+    flushActiveMetaChannel();
+    http
+      .expectOne(twilioConversationsUrl)
+      .flush(
+        { detail: { message: 'Twilio WhatsApp is not configured' } },
+        { status: 404, statusText: 'Not Found' },
+      );
+    http.expectOne(`${metaBaseUrl}/conversations?page=1&size=20`).flush(emptyConversationPage());
+
+    metaService.announceChannelChanged();
+    flushActiveMetaChannel();
+    http
+      .expectOne(twilioConversationsUrl)
+      .flush(
+        { detail: { message: 'Twilio WhatsApp is not configured' } },
+        { status: 404, statusText: 'Not Found' },
+      );
+    const refreshed = http.expectOne(`${metaBaseUrl}/conversations?page=1&size=20`);
+    expect(refreshed.request.method).toBe('GET');
+    refreshed.flush(emptyConversationPage());
   });
 
   function flushActiveMetaChannel(): void {

@@ -42,6 +42,12 @@ export const SETTINGS_MENU: readonly SettingsMenuItem[] = [
     path: '/settings/menu-permissions',
     requiredPermission: PERMISSIONS.settingsMenuPermissionsView,
   },
+  {
+    label: 'Integrations',
+    description: 'Check and connect workspace messaging integrations.',
+    path: '/settings/integrations',
+    requiredPermission: PERMISSIONS.settingsIntegrationsView,
+  },
 ];
 
 export const WORKSPACE_MENU: readonly MenuItem[] = [
@@ -155,6 +161,7 @@ export const WORKSPACE_MENU: readonly MenuItem[] = [
       PERMISSIONS.settingsRolesView,
       PERMISSIONS.settingsUsersView,
       PERMISSIONS.settingsMenuPermissionsView,
+      PERMISSIONS.settingsIntegrationsView,
     ],
     permissionMatch: 'any',
   },

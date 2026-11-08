@@ -47,10 +47,30 @@ export class LeadFormPageComponent {
   }
 
   protected finish(saved: Lead): void {
-    void this.router.navigate(['/leads', saved.id], { queryParams: { saved: '1' } });
+    if (this.editing) {
+      void this.router.navigate(['/leads', saved.id], { queryParams: { saved: '1' } });
+      return;
+    }
+    void this.router.navigateByUrl(this.leadListPageOneUrl());
   }
 
   protected cancel(): void {
     void this.router.navigate(this.leadId ? ['/leads', this.leadId] : ['/leads']);
+  }
+
+  private leadListPageOneUrl() {
+    const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl');
+    if (!returnUrl) {
+      return this.router.createUrlTree(['/leads'], { queryParams: { page: 1 } });
+    }
+
+    const parsed = this.router.parseUrl(returnUrl);
+    const primarySegments = parsed.root.children['primary']?.segments.map(
+      (segment) => segment.path,
+    );
+    const isLeadList = primarySegments?.length === 1 && primarySegments[0] === 'leads';
+    return this.router.createUrlTree(['/leads'], {
+      queryParams: { ...(isLeadList ? parsed.queryParams : {}), page: 1 },
+    });
   }
 }

@@ -44,6 +44,9 @@ describe('LeadsService', () => {
     expect(request.request.params.get('status')).toBe('qualified');
     expect(request.request.params.get('assigned_user_id')).toBe('user-id');
     expect(request.request.params.has('company')).toBe(false);
+    expect(request.request.params.has('sort')).toBe(false);
+    expect(request.request.params.has('sort_by')).toBe(false);
+    expect(request.request.params.has('ordering')).toBe(false);
     request.flush({ success: true, data: { items: [], page: 3, size: 20, total: 0 } });
   });
 

@@ -206,6 +206,48 @@ describe('LeadListComponent service filter', () => {
     latest.flush({ success: true, data: { items: [], page: 1, size: 20, total: 0 } });
   });
 
+  it('renders the backend-paginated lead order without sorting the loaded page', () => {
+    const { fixture } = createComponent();
+    const serverOrderedItems = [
+      {
+        id: 'newest-lead',
+        first_name: 'Zara',
+        last_name: 'Newest',
+        email: 'zara@example.com',
+        created_at: '2026-11-07T12:00:00Z',
+      },
+      {
+        id: 'older-lead',
+        first_name: 'Aaron',
+        last_name: 'Older',
+        email: 'aaron@example.com',
+        created_at: '2026-11-06T12:00:00Z',
+      },
+    ] as Lead[];
+    http
+      .expectOne(
+        (request) =>
+          request.url === `${API_CONFIG.baseUrl}/leads` && request.params.get('page') === '3',
+      )
+      .flush({
+        success: true,
+        data: { items: serverOrderedItems, page: 3, size: 20, total: 42 },
+      });
+    http.expectOne(`${API_CONFIG.baseUrl}/leads/service-requested-options?page=1&size=100`).flush({
+      success: true,
+      data: { items: [], page: 1, size: 100, total: 0 },
+    });
+
+    fixture.detectChanges();
+
+    const names = Array.from(
+      fixture.nativeElement.querySelectorAll('tbody tr td:nth-child(2) strong'),
+      (element) => (element as HTMLElement).textContent?.trim(),
+    );
+    expect(names).toEqual(['Zara Newest', 'Aaron Older']);
+    expect(fixture.nativeElement.querySelector('thead [aria-sort]')).toBeNull();
+  });
+
   it('shows empty/error states, retries, and clears workspace-specific state', () => {
     const { fixture, component } = createComponent();
     http

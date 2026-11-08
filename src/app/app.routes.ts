@@ -271,6 +271,7 @@ export const routes: Routes = [
             PERMISSIONS.settingsRolesView,
             PERMISSIONS.settingsUsersView,
             PERMISSIONS.settingsMenuPermissionsView,
+            PERMISSIONS.settingsIntegrationsView,
           ],
           permissionMatch: 'any',
         },
@@ -316,6 +317,16 @@ export const routes: Routes = [
                 (component) => component.MenuPermissionsComponent,
               ),
             title: 'Menu Permission | PowerLead',
+          },
+          {
+            path: 'integrations',
+            canActivate: [permissionGuard],
+            data: { requiredPermissions: [PERMISSIONS.settingsIntegrationsView] },
+            loadComponent: () =>
+              import('./features/settings/integrations/whatsapp-business-app-connect.component').then(
+                (component) => component.WhatsAppBusinessAppConnectComponent,
+              ),
+            title: 'Integrations | PowerLead',
           },
         ],
       },

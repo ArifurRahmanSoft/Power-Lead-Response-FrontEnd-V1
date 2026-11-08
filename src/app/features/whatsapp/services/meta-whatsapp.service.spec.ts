@@ -92,6 +92,42 @@ describe('MetaWhatsAppService', () => {
     expect(link.request.body).toEqual({ lead_id: 'lead-1' });
   });
 
+  it('uses the backend connection contract without adding client configuration', () => {
+    service.getConnectReadiness().subscribe();
+    expect(http.expectOne(`${baseUrl}/connect/readiness`).request.method).toBe('GET');
+
+    service.initiateConnection().subscribe();
+    const initiate = http.expectOne(`${baseUrl}/connect/initiate`);
+    expect(initiate.request.method).toBe('POST');
+    expect(initiate.request.body).toBeNull();
+
+    const completion = {
+      operation_id: 'operation-1',
+      state: 'one-time-state',
+      code: 'short-lived-code',
+      session: {
+        event: 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING' as const,
+        business_id: 'business-1',
+        waba_id: 'waba-1',
+        phone_number_id: 'phone-1',
+      },
+    };
+    service.completeConnection(completion).subscribe();
+    const complete = http.expectOne(`${baseUrl}/connect/complete`);
+    expect(complete.request.method).toBe('POST');
+    expect(complete.request.body).toEqual(completion);
+
+    service.getConnectionOperation('operation/unsafe').subscribe();
+    expect(http.expectOne(`${baseUrl}/connect/operations/operation%2Funsafe`).request.method).toBe(
+      'GET',
+    );
+
+    service.activateConnection('operation-1').subscribe();
+    const activate = http.expectOne(`${baseUrl}/connect/operations/operation-1/activate`);
+    expect(activate.request.method).toBe('POST');
+    expect(activate.request.body).toEqual({ confirm_replace_existing_sender: true });
+  });
+
   it('uses the same API root for every Meta operation', () => {
     service.getChannel().subscribe();
     service.listConversations(1, 20).subscribe();

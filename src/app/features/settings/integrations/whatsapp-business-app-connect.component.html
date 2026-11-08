@@ -52,6 +52,26 @@
     <p class="flow-warning" role="status">{{ flowWarning() }}</p>
   }
 
+  <details class="diagnostics">
+    <summary>Connection diagnostics</summary>
+    <dl>
+      <dt>Stage</dt>
+      <dd>{{ diagnostics().stage }}</dd>
+      <dt>Authorization code received</dt>
+      <dd>{{ diagnostics().code_received ? 'Yes' : 'No' }}</dd>
+      <dt>Signup session received</dt>
+      <dd>{{ diagnostics().session_received ? 'Yes' : 'No' }}</dd>
+      <dt>/connect/complete reached</dt>
+      <dd>{{ diagnostics().connect_complete_reached ? 'Yes' : 'No' }}</dd>
+      <dt>Operation status checks</dt>
+      <dd>{{ diagnostics().status_checks }}</dd>
+      @if (diagnostics().error_code) {
+        <dt>Error code</dt>
+        <dd>{{ diagnostics().error_code }}</dd>
+      }
+    </dl>
+  </details>
+
   @if (phase() === 'success') {
     <section class="success-card" role="status">
       <h3>WhatsApp connection confirmed</h3>

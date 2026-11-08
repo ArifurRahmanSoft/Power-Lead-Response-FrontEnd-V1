@@ -12,7 +12,7 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { finalize } from 'rxjs';
+import { TimeoutError, finalize, timeout } from 'rxjs';
 
 import { PERMISSIONS } from '../../../core/models/auth.models';
 import { AuthService } from '../../../core/services/auth.service';
@@ -48,12 +48,35 @@ interface EmbeddedSignupMessage {
   data: Record<string, unknown>;
 }
 
+interface OnboardingDiagnostics {
+  stage:
+    | 'idle'
+    | 'prepared'
+    | 'waiting_for_code_and_session'
+    | 'waiting_for_code'
+    | 'waiting_for_session'
+    | 'submitting_completion'
+    | 'recovering_operation'
+    | 'confirmation_required'
+    | 'activating_sender'
+    | 'completed'
+    | 'failed';
+  code_received: boolean;
+  session_received: boolean;
+  connect_complete_reached: boolean;
+  status_checks: number;
+  error_code: string | null;
+}
+
 const ALLOWED_META_MESSAGE_ORIGINS = new Set([
   'https://www.facebook.com',
   'https://web.facebook.com',
+  'https://business.facebook.com',
 ]);
 const MAX_RECOVERY_ATTEMPTS = 3;
 const RECOVERY_DELAY_MS = 750;
+const HANDSHAKE_TIMEOUT_MS = 30_000;
+const API_RESPONSE_TIMEOUT_MS = 15_000;
 const SUCCESS_STATUSES = new Set([
   'completed',
   'complete',
@@ -91,6 +114,14 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
   protected readonly flowWarning = signal('');
   protected readonly channelSender = signal('');
   protected readonly confirmationDetails = signal('');
+  protected readonly diagnostics = signal<OnboardingDiagnostics>({
+    stage: 'idle',
+    code_received: false,
+    session_received: false,
+    connect_complete_reached: false,
+    status_checks: 0,
+    error_code: null,
+  });
 
   private operation: MetaWhatsAppConnectInitiation | null = null;
   private authorizationCode: string | null = null;
@@ -102,6 +133,7 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
   private recoveryAttempts = 0;
   private expiryTimer: ReturnType<typeof setTimeout> | null = null;
   private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
+  private handshakeTimer: ReturnType<typeof setTimeout> | null = null;
 
   ngOnInit(): void {
     this.loadReadiness();
@@ -140,6 +172,7 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
                 return;
               }
               this.phase.set('prepared');
+              this.patchDiagnostics({ stage: 'prepared' });
             })
             .catch((error: unknown) => {
               if (!this.destroyed && this.operation === data)
@@ -166,6 +199,15 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
     this.completionStarted = false;
     this.phase.set('launching');
     this.installMessageListener();
+    this.patchDiagnostics({
+      stage: 'waiting_for_code_and_session',
+      code_received: false,
+      session_received: false,
+      connect_complete_reached: false,
+      status_checks: 0,
+      error_code: null,
+    });
+    this.scheduleHandshakeTimeout();
 
     try {
       this.facebook.login(
@@ -196,14 +238,22 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
     const operationId = this.operation?.operation_id;
     if (this.phase() !== 'confirmation' || !operationId || !this.canUpdate()) return;
     this.phase.set('activating');
+    this.patchDiagnostics({ stage: 'activating_sender', error_code: null });
     this.flowError.set('');
     this.meta
       .activateConnection(operationId)
-      .pipe(takeUntilDestroyed(this.destroyRef))
+      .pipe(timeout(API_RESPONSE_TIMEOUT_MS), takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: ({ data }) => {
-          if (this.operation?.operation_id === operationId)
-            this.handleOperationData(data, 'activation');
+        next: (response) => {
+          if (this.operation?.operation_id !== operationId) return;
+          if (response.success !== true) {
+            this.failFlow(
+              response.message?.trim() || 'WhatsApp sender activation was not successful.',
+              'activation_response_unsuccessful',
+            );
+            return;
+          }
+          this.handleOperationData(response.data, 'activation');
         },
         error: (error: unknown) => {
           if (this.operation?.operation_id === operationId)
@@ -298,10 +348,17 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
         response.status === 'not_authorized'
           ? 'Facebook authorization was not granted.'
           : 'Facebook signup was cancelled or closed before an authorization code was returned.',
+        response.status === 'not_authorized'
+          ? 'facebook_not_authorized'
+          : 'authorization_cancelled',
       );
       return;
     }
     this.authorizationCode = code;
+    this.patchDiagnostics({
+      code_received: true,
+      stage: this.signupSession ? 'submitting_completion' : 'waiting_for_session',
+    });
     this.submitWhenReady();
   }
 
@@ -312,7 +369,7 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
     if (this.sessionMessageSource && event.source !== this.sessionMessageSource) return;
 
     if (message.event === 'CANCEL') {
-      this.failFlow('Facebook signup was cancelled before completion.');
+      this.failFlow('Facebook signup was cancelled before completion.', 'session_cancelled');
       return;
     }
     if (message.event === 'ERROR') {
@@ -321,19 +378,28 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
         this.stringValue(message.data['message']);
       this.failFlow(
         detail ? `Facebook signup failed: ${detail}` : 'Facebook signup reported an error.',
+        this.safeDiagnosticCode(message.data['error_code'] ?? 'session_error'),
       );
       return;
     }
     if (message.event !== 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING') {
-      this.flowWarning.set(`Ignored unsupported WhatsApp signup event: ${message.event}.`);
+      this.failFlow(
+        `Unsupported WhatsApp signup completion event: ${message.event}. Expected FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING for Coexistence onboarding.`,
+        'unsupported_session_event',
+      );
       return;
     }
 
     const wabaId = this.stringValue(message.data['waba_id']);
     const phoneNumberId = this.stringValue(message.data['phone_number_id']);
     if (!wabaId || !phoneNumberId) {
-      this.flowWarning.set(
-        'Ignored malformed WhatsApp signup completion: data.waba_id and data.phone_number_id are required.',
+      const missingFields = [
+        ...(wabaId ? [] : ['data.waba_id']),
+        ...(phoneNumberId ? [] : ['data.phone_number_id']),
+      ];
+      this.failFlow(
+        `WhatsApp signup completed, but the session payload is missing ${missingFields.join(' and ')} required by /connect/complete. The completion request was not submitted.`,
+        'session_missing_required_fields',
       );
       return;
     }
@@ -356,6 +422,10 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
     }
     this.sessionMessageSource = event.source;
     this.signupSession = session;
+    this.patchDiagnostics({
+      session_received: true,
+      stage: this.authorizationCode ? 'submitting_completion' : 'waiting_for_code',
+    });
     this.submitWhenReady();
   };
 
@@ -370,8 +440,9 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
     }
     if (!this.isRecord(parsed) || parsed['type'] !== 'WA_EMBEDDED_SIGNUP') return null;
     if (typeof parsed['event'] !== 'string' || !this.isRecord(parsed['data'])) {
-      this.flowWarning.set(
-        'Ignored malformed WA_EMBEDDED_SIGNUP message: string event and object data fields are required.',
+      this.failFlow(
+        'Malformed WA_EMBEDDED_SIGNUP message: string event and object data fields are required.',
+        'malformed_session_event',
       );
       return null;
     }
@@ -394,6 +465,14 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
 
     this.completionStarted = true;
     this.phase.set('submitting');
+    this.patchDiagnostics({
+      stage: 'submitting_completion',
+      code_received: true,
+      session_received: true,
+      connect_complete_reached: true,
+      error_code: null,
+    });
+    this.clearHandshakeTimer();
     this.removeMessageListener();
     this.meta
       .completeConnection({
@@ -402,13 +481,20 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
         code,
         session,
       })
-      .pipe(takeUntilDestroyed(this.destroyRef))
+      .pipe(timeout(API_RESPONSE_TIMEOUT_MS), takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: ({ data }) => {
+        next: (response) => {
           if (this.operation?.operation_id !== operation.operation_id) return;
           this.authorizationCode = null;
           this.signupSession = null;
-          this.handleOperationData(data, 'completion');
+          if (response.success !== true) {
+            this.failFlow(
+              response.message?.trim() || 'WhatsApp connection completion was not successful.',
+              'completion_response_unsuccessful',
+            );
+            return;
+          }
+          this.handleOperationData(response.data, 'completion');
         },
         error: (error: unknown) => {
           if (this.operation?.operation_id !== operation.operation_id) return;
@@ -427,6 +513,7 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
     if (outcome === 'confirmation') {
       this.confirmationDetails.set(this.backendSenderDetails(data));
       this.phase.set('confirmation');
+      this.patchDiagnostics({ stage: 'confirmation_required', error_code: null });
       return;
     }
     if (outcome === 'success') {
@@ -434,7 +521,10 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
       return;
     }
     if (outcome === 'failure') {
-      this.failFlow(`WhatsApp connection operation ended with status: ${data.status}.`);
+      this.failFlow(
+        `WhatsApp connection operation ended with status: ${data.status}.`,
+        `operation_${this.safeDiagnosticCode(data.status)}`,
+      );
       return;
     }
     if (outcome === 'pending') {
@@ -447,6 +537,9 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
         typeof data.status === 'string'
           ? `Cannot determine the WhatsApp connection result: operation response has unsupported data.status value "${data.status}".`
           : 'Cannot determine the WhatsApp connection result: operation response is missing data.status (string).',
+        typeof data.status === 'string'
+          ? 'unsupported_operation_status'
+          : 'missing_operation_status',
       );
       return;
     }
@@ -454,10 +547,14 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
   }
 
   private handleUncertainMutation(error: unknown, stage: 'completion' | 'activation'): void {
-    if (this.isUncertainHttpFailure(error)) {
+    if (this.isUncertainMutationFailure(error)) {
+      const timedOut = error instanceof TimeoutError;
       this.flowWarning.set(
-        `${stage === 'activation' ? 'Activation' : 'Completion'} response was uncertain. Checking the existing operation without resubmitting it.`,
+        `${stage === 'activation' ? 'Activation' : 'Completion'} response ${timedOut ? 'timed out' : 'was uncertain'}. Checking the existing operation without resubmitting it.`,
       );
+      this.patchDiagnostics({
+        error_code: timedOut ? `${stage}_response_timeout` : `${stage}_response_uncertain`,
+      });
       this.recoverOperation();
       return;
     }
@@ -485,22 +582,41 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
     }
     this.phase.set('recovering');
     this.recoveryAttempts += 1;
+    this.patchDiagnostics({
+      stage: 'recovering_operation',
+      status_checks: this.recoveryAttempts,
+    });
     this.meta
       .getConnectionOperation(operationId)
-      .pipe(takeUntilDestroyed(this.destroyRef))
+      .pipe(timeout(API_RESPONSE_TIMEOUT_MS), takeUntilDestroyed(this.destroyRef))
       .subscribe({
-        next: ({ data }) => {
-          if (this.operation?.operation_id === operationId)
-            this.handleOperationData(data, 'recovery');
+        next: (response) => {
+          if (this.operation?.operation_id !== operationId) return;
+          if (response.success !== true) {
+            this.failFlow(
+              response.message?.trim() || 'WhatsApp operation status lookup was not successful.',
+              'operation_status_response_unsuccessful',
+            );
+            return;
+          }
+          this.handleOperationData(response.data, 'recovery');
         },
         error: (error: unknown) => {
           if (this.operation?.operation_id !== operationId) return;
           if (this.recoveryAttempts >= MAX_RECOVERY_ATTEMPTS) {
+            if (error instanceof TimeoutError) {
+              this.failFlow(
+                `The connection result could not be recovered because all ${MAX_RECOVERY_ATTEMPTS} operation status checks timed out.`,
+                'operation_status_timeout',
+              );
+              return;
+            }
             this.failFlow(
               this.errorMessage(
                 error,
                 `The connection result could not be recovered after ${MAX_RECOVERY_ATTEMPTS} status checks.`,
               ),
+              'operation_status_error',
             );
             return;
           }
@@ -515,7 +631,7 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
   }
 
   private operationOutcome(data: MetaWhatsAppConnectOperationData): OperationOutcome {
-    const status = typeof data.status === 'string' ? data.status.toLowerCase() : '';
+    const status = typeof data.status === 'string' ? data.status.trim().toLowerCase() : '';
     if (data.confirmation_required === true || status === 'confirmation_required')
       return 'confirmation';
     if (SUCCESS_STATUSES.has(status)) return 'success';
@@ -531,16 +647,21 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
     this.phase.set('success');
     this.flowError.set('');
     this.flowWarning.set('');
+    this.patchDiagnostics({ stage: 'completed', error_code: null });
     this.meta.announceChannelChanged();
     this.loadReadiness();
     this.refreshChannel();
   }
 
-  private failFlow(message: string): void {
+  private failFlow(message: string, errorCode = 'flow_failed'): void {
     this.clearFlowResources();
     this.clearSensitiveFlowState();
     this.phase.set('idle');
     this.flowError.set(message);
+    this.patchDiagnostics({
+      stage: 'failed',
+      error_code: this.safeDiagnosticCode(errorCode),
+    });
   }
 
   private resetFlow(): void {
@@ -550,6 +671,14 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
     this.flowError.set('');
     this.flowWarning.set('');
     this.confirmationDetails.set('');
+    this.diagnostics.set({
+      stage: 'idle',
+      code_received: false,
+      session_received: false,
+      connect_complete_reached: false,
+      status_checks: 0,
+      error_code: null,
+    });
   }
 
   private clearSensitiveFlowState(): void {
@@ -566,11 +695,42 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
     if (this.expiryTimer) clearTimeout(this.expiryTimer);
     this.expiryTimer = null;
     this.clearRecoveryTimer();
+    this.clearHandshakeTimer();
   }
 
   private clearRecoveryTimer(): void {
     if (this.recoveryTimer) clearTimeout(this.recoveryTimer);
     this.recoveryTimer = null;
+  }
+
+  private scheduleHandshakeTimeout(): void {
+    this.clearHandshakeTimer();
+    this.handshakeTimer = setTimeout(() => {
+      if (this.phase() !== 'launching' || this.completionStarted) return;
+      const codeReceived = Boolean(this.authorizationCode);
+      const sessionReceived = Boolean(this.signupSession);
+      if (codeReceived && !sessionReceived) {
+        this.failFlow(
+          'Facebook authorization returned a code, but the WhatsApp signup session event was not received. /connect/complete was not called.',
+          'session_timeout',
+        );
+      } else if (!codeReceived && sessionReceived) {
+        this.failFlow(
+          'The WhatsApp signup session completed, but Facebook did not return an authorization code. /connect/complete was not called.',
+          'authorization_code_timeout',
+        );
+      } else {
+        this.failFlow(
+          'Facebook signup did not return an authorization code or a WhatsApp session event in time. /connect/complete was not called.',
+          'handshake_timeout',
+        );
+      }
+    }, HANDSHAKE_TIMEOUT_MS);
+  }
+
+  private clearHandshakeTimer(): void {
+    if (this.handshakeTimer) clearTimeout(this.handshakeTimer);
+    this.handshakeTimer = null;
   }
 
   private installMessageListener(): void {
@@ -602,6 +762,7 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
   private expireFlow(): void {
     this.failFlow(
       'This one-time connection operation expired. Prepare a new connection and try again.',
+      'operation_expired',
     );
   }
 
@@ -696,11 +857,22 @@ export class WhatsAppBusinessAppConnectComponent implements OnInit, OnDestroy {
     return Object.keys(details).length ? JSON.stringify(details, null, 2) : '';
   }
 
-  private isUncertainHttpFailure(error: unknown): boolean {
+  private isUncertainMutationFailure(error: unknown): boolean {
+    if (error instanceof TimeoutError) return true;
     return (
       error instanceof HttpErrorResponse &&
       (error.status === 0 || error.status === 408 || error.status === 429 || error.status >= 500)
     );
+  }
+
+  private patchDiagnostics(patch: Partial<OnboardingDiagnostics>): void {
+    this.diagnostics.update((current) => ({ ...current, ...patch }));
+  }
+
+  private safeDiagnosticCode(value: unknown): string {
+    const code = typeof value === 'string' || typeof value === 'number' ? String(value) : 'unknown';
+    const normalized = code.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 80);
+    return normalized || 'unknown';
   }
 
   private errorMessage(error: unknown, fallback: string): string {

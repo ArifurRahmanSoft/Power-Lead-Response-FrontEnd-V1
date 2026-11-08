@@ -88,7 +88,10 @@ describe('WhatsAppBusinessAppConnectComponent', () => {
     fixture.detectChanges();
   });
 
-  afterEach(() => fixture?.destroy());
+  afterEach(() => {
+    vi.useRealTimers();
+    fixture?.destroy();
+  });
 
   it('uses the exact readiness envelope once and gates the action by update permission', async () => {
     const readyRoot = fixture.nativeElement as HTMLElement;
@@ -191,10 +194,32 @@ describe('WhatsAppBusinessAppConnectComponent', () => {
     expect(meta.completeConnection).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects non-exact origins and malformed completion events', async () => {
+  it('accepts the exact Meta business origin and reaches /connect/complete', async () => {
+    await launch();
+    loginCallback?.({ authResponse: { code: 'secret-code' } });
+    dispatchSession('https://business.facebook.com');
+    fixture.detectChanges();
+
+    expect(meta.completeConnection).toHaveBeenCalledTimes(1);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.textContent).toContain('/connect/complete reachedYes');
+    expect(root.textContent).not.toContain('secret-code');
+    expect(root.textContent).not.toContain('one-time-state');
+  });
+
+  it('rejects non-exact origins without allowing them to disturb the active flow', async () => {
     await launch();
     loginCallback?.({ authResponse: { code: 'secret-code' } });
     dispatchSession('https://www.facebook.com.evil.test');
+    expect(meta.completeConnection).not.toHaveBeenCalled();
+
+    dispatchSession('https://www.facebook.com');
+    expect(meta.completeConnection).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails precisely instead of waiting on malformed or unsupported completion events', async () => {
+    await launch();
+    loginCallback?.({ authResponse: { code: 'secret-code' } });
     window.dispatchEvent(
       new MessageEvent('message', {
         origin: 'https://www.facebook.com',
@@ -209,11 +234,90 @@ describe('WhatsAppBusinessAppConnectComponent', () => {
     fixture.detectChanges();
     expect(meta.completeConnection).not.toHaveBeenCalled();
     expect((fixture.nativeElement as HTMLElement).textContent).toContain(
-      'data.waba_id and data.phone_number_id',
+      'session payload is missing data.phone_number_id',
+    );
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+      'session_missing_required_fields',
     );
 
+    await launch();
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        origin: 'https://www.facebook.com',
+        source: window,
+        data: {
+          type: 'WA_EMBEDDED_SIGNUP',
+          event: 'FINISH',
+          data: { waba_id: 'waba-1', phone_number_id: 'phone-1' },
+        },
+      }),
+    );
+    fixture.detectChanges();
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+      'Expected FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING',
+    );
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+      'unsupported_session_event',
+    );
+  });
+
+  it('times out with an exact missing-session stage after receiving only the code', async () => {
+    vi.useFakeTimers();
+    await launch();
+    loginCallback?.({ authResponse: { code: 'secret-code' } });
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    expect(meta.completeConnection).not.toHaveBeenCalled();
+    expect(root.textContent).toContain('session event was not received');
+    expect(root.textContent).toContain('/connect/complete reachedNo');
+    expect(root.textContent).toContain('session_timeout');
+  });
+
+  it('times out with an exact missing-code stage after receiving only the session', async () => {
+    vi.useFakeTimers();
+    await launch();
     dispatchSession('https://www.facebook.com');
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    expect(meta.completeConnection).not.toHaveBeenCalled();
+    expect(root.textContent).toContain('did not return an authorization code');
+    expect(root.textContent).toContain('authorization_code_timeout');
+  });
+
+  it('recovers a timed-out completion response with bounded GET status lookup', async () => {
+    vi.useFakeTimers();
+    await launchAndCompleteInputs();
     expect(meta.completeConnection).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    fixture.detectChanges();
+
+    expect(meta.completeConnection).toHaveBeenCalledTimes(1);
+    expect(meta.getConnectionOperation).toHaveBeenCalledTimes(1);
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.textContent).toContain('WhatsApp connection confirmed');
+    expect(root.textContent).toContain('/connect/complete reachedYes');
+    expect(root.textContent).toContain('Operation status checks1');
+  });
+
+  it('handles an explicit completed response without entering recovery', async () => {
+    meta.completeConnection.mockReturnValueOnce(
+      of({ success: true, message: '', data: { status: 'completed' } }),
+    );
+    await launchAndCompleteInputs();
+    fixture.detectChanges();
+
+    expect(meta.completeConnection).toHaveBeenCalledTimes(1);
+    expect(meta.getConnectionOperation).not.toHaveBeenCalled();
+    expect((fixture.nativeElement as HTMLElement).textContent).toContain(
+      'WhatsApp connection confirmed',
+    );
   });
 
   it('handles popup blocking, cancellation, expiry, and listener cleanup', async () => {
